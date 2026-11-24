@@ -51,6 +51,24 @@ test("public installation guide uses server configuration and copies exact comma
   await expect(page.getByRole("heading", { name: "통합 설치", exact: true })).toBeVisible();
   await expect(page.getByTestId("cli-install-server")).toHaveText(serverUrl);
   expect(new URL(page.url()).origin).not.toBe(serverUrl);
+  const contents = page.getByRole("navigation", { name: "통합 설치 문서 목차" });
+  await expect(contents.getByRole("link").first()).toHaveText("코딩 에이전트 연결");
+  await expect(contents.locator('a[aria-current="page"]')).toHaveText("코딩 에이전트 연결");
+  await expect(page.getByRole("article")).toHaveAccessibleName("코딩 에이전트 연결");
+  await expect(page.getByLabel("Windows 설치 명령", { exact: true })).toHaveCount(0);
+  const agentUrl = serverUrl + "/api/v1/cli/agent-setup";
+  await expect(page.getByRole("link", { name: "에이전트용 원본 안내문 열기" })).toHaveAttribute("href", agentUrl);
+  for (const agent of ["Codex", "Claude Code"]) {
+    await page.getByRole("button", { name: agent, exact: true }).click();
+    const label = agent + "에 보낼 요청문";
+    const prompt = await page.getByLabel(label, { exact: true }).innerText();
+    expect(prompt).toContain(agentUrl);
+    expect(prompt).toContain("get_contract");
+    await page.getByRole("button", { name: label + " 복사" }).click();
+    await expect.poll(() => page.evaluate(() => (window as typeof window & { copiedCommand?: string }).copiedCommand)).toBe(prompt);
+  }
+  await contents.getByRole("link", { name: "CLI 설치와 로그인" }).click();
+  await expect(page).toHaveURL(/#cli-setup$/);
   await expect(page.getByLabel("Linux·macOS 설치 명령", { exact: true })).toHaveText(guide.commands.unix);
   await expect(page.getByLabel("Windows 설치 명령", { exact: true })).toHaveText(guide.commands.windows);
   await expect(page.getByLabel("CLI 로그인 명령", { exact: true })).toHaveText("miy auth login");
@@ -61,16 +79,6 @@ test("public installation guide uses server configuration and copies exact comma
   await page.getByRole("button", { name: "CLI 로그인 명령 복사", exact: true }).click();
   await expect.poll(() => page.evaluate(() => (window as typeof window & { copiedCommand?: string }).copiedCommand)).toBe(guide.commands.login);
   await expect(page.getByRole("link", { name: "회원가입 신청" })).toHaveAttribute("href", serverUrl + "/signup");
-  const agentUrl = serverUrl + "/api/v1/cli/agent-setup";
-  await expect(page.getByRole("link", { name: "에이전트용 원본 안내문 열기" })).toHaveAttribute("href", agentUrl);
-  for (const agent of ["Codex", "Claude Code"]) {
-    const label = agent + "에 보낼 요청문";
-    const prompt = await page.getByLabel(label, { exact: true }).innerText();
-    expect(prompt).toContain(agentUrl);
-    expect(prompt).toContain("get_contract");
-    await page.getByRole("button", { name: label + " 복사" }).click();
-    await expect.poll(() => page.evaluate(() => (window as typeof window & { copiedCommand?: string }).copiedCommand)).toBe(prompt);
-  }
   await page.screenshot({ path: testInfo.outputPath("cli-install-desktop.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -85,6 +93,8 @@ test("signed-in users can open installation guidance from the platform menu", as
   await page.getByRole("link", { name: "통합 설치", exact: true }).click();
   await expect(page.getByTestId("cli-install-server")).toHaveText(serverUrl);
   await expect(page.locator("header")).toContainText("설치 사용자");
+  await page.getByRole("navigation", { name: "통합 설치 문서 목차" }).getByRole("link", { name: "CLI 명령 문서" }).click();
+  await expect(page.getByRole("article")).toContainText("docs/CLI-REFERENCE.md");
 });
 
 test("unavailable server guidance never falls back to a browser-derived installation command", async ({ page }) => {
@@ -106,7 +116,7 @@ test("published candidate exposes immutable archive and checksum links with its 
     commands: { ...guide.commands, windows: command },
     downloads: [{ target: "x86_64-pc-windows-msvc", file, sha256: "b".repeat(64), url, checksumUrl: `${url}.sha256` }],
   } }));
-  await page.goto("/cli/install");
+  await page.goto("/cli/install#cli-setup");
   await page.getByText("설치 파일 직접 다운로드", { exact: true }).click();
   await expect(page.getByRole("link", { name: file, exact: true })).toHaveAttribute("href", url);
   await expect(page.getByRole("link", { name: "SHA-256", exact: true })).toHaveAttribute("href", `${url}.sha256`);
@@ -132,7 +142,7 @@ test("one-line commands stay primary when a Windows GUI installer is also publis
     ...guide,
     windowsInstaller: { file, url, checksumUrl: `${url}.sha256`, sha256: "e".repeat(64) },
   } }));
-  await page.goto("/cli/install");
+  await page.goto("/cli/install#cli-setup");
   await expect(page.getByLabel("Windows 설치 명령", { exact: true })).toBeVisible();
   await page.getByText("설치 파일 직접 다운로드", { exact: true }).click();
   const download = page.getByRole("link", { name: "Windows 설치 파일 다운로드", exact: true });
@@ -159,7 +169,7 @@ test("Windows setup guidance supports company HTTP IP servers without substituti
     ...guide, serverUrl: companyUrl,
     windowsInstaller: { file: "MiySetup-0.6.0-windows-x64.exe", url: "/cli/installers/fixture/setup.exe", checksumUrl: "/cli/installers/fixture/setup.exe.sha256", sha256: "e".repeat(64) },
   } }));
-  await page.goto("/cli/install");
+  await page.goto("/cli/install#cli-setup");
   await expect(page.getByTestId("cli-install-server")).toHaveText(companyUrl);
   await page.getByText("설치 파일 직접 다운로드", { exact: true }).click();
   await expect(page.getByLabel("설치에 입력할 서버 주소", { exact: true })).toHaveText(companyUrl);
@@ -170,9 +180,48 @@ test("Windows setup guidance supports company HTTP IP servers without substituti
 test("missing packages do not advertise commands that cannot install", async ({ page }) => {
   await setup(page);
   await page.route("**/api/v1/cli/install", (route) => route.fulfill({ json: { ...guide, downloads: [] } }));
-  await page.goto("/cli/install");
+  await page.goto("/cli/install#cli-setup");
   await expect(page.getByText("이 서버에 Linux·macOS CLI 패키지가 아직 게시되지 않았습니다.", { exact: false })).toBeVisible();
   await expect(page.getByText("이 서버에 Windows CLI 패키지가 아직 게시되지 않았습니다.", { exact: false })).toBeVisible();
   await expect(page.getByLabel("Linux·macOS 설치 명령", { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("Windows 설치 명령", { exact: true })).toHaveCount(0);
+});
+
+test("guide chapters support shared URLs, browser history and mobile navigation", async ({ page }) => {
+  await setup(page);
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.goto("/cli/install#cli-usage");
+  const contents = page.getByRole("navigation", { name: "통합 설치 문서 목차" });
+  const chapter = page.getByRole("article");
+  await expect(chapter).toContainText("miy app init ./my-app");
+  for (const [name, expected] of [
+    ["CLI 명령 문서", "docs/CLI-REFERENCE.md"],
+    ["MCP 설치와 연결", serverUrl + "/mcp"],
+    ["업데이트와 연결 관리", "miy auth sessions list"],
+  ]) {
+    await contents.getByRole("link", { name, exact: true }).click();
+    await expect(chapter).toHaveAccessibleName(name);
+    await expect(contents.locator('a[aria-current="page"]')).toHaveText(name);
+    await expect(chapter).toContainText(expected);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+  await expect(chapter.getByRole("link", { name: "콘솔에서 내 CLI 연결 열기" })).toHaveAttribute("href", serverUrl + "/cli/sessions");
+  await page.goBack();
+  await expect(chapter).toContainText("claude mcp get miy_app");
+  await page.reload();
+  await expect(chapter).toContainText("codex mcp get miy_app");
+  await page.goForward();
+  await expect(chapter).toHaveAccessibleName("업데이트와 연결 관리");
+});
+
+test("English setup guide uses the same project and remote MCP workflow", async ({ page }) => {
+  await setup(page);
+  await page.addInitScript(() => localStorage.setItem("miy:display-settings", JSON.stringify({ locale: "en-US" })));
+  await page.goto("/cli/install#agent-setup");
+  const contents = page.getByRole("navigation", { name: "Setup guide contents" });
+  await expect(contents.getByRole("link")).toHaveCount(6);
+  await expect(page.getByRole("article")).toContainText("platformBundleVersion");
+  await contents.getByRole("link", { name: "MCP setup" }).click();
+  await expect(page.getByRole("article")).toContainText("get_cli_help");
+  await expect(page.getByRole("article")).toContainText(serverUrl + "/mcp");
 });
