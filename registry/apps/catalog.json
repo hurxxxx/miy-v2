@@ -37,9 +37,31 @@
       ]
     },
     {"appId": "plm", "name": "PLM", "defaultInstall": false, "releases": []},
-    {"appId": "docs", "name": "문서", "defaultInstall": false, "releases": []},
+    {
+      "appId": "docs",
+      "name": "문서",
+      "defaultInstall": false,
+      "releases": [
+        {
+          "version": "0.2.0",
+          "sourceCommit": "c93d80d75437f346d6228c209875107e86f27550",
+          "archiveSha256": "7eed0dceca16c1473ea3cc738f917fd865cd9f8fbc2a3cd1c12a6a539032bbc5"
+        }
+      ]
+    },
     {"appId": "drive", "name": "드라이브", "defaultInstall": false, "releases": []},
-    {"appId": "whiteboard", "name": "화이트보드", "defaultInstall": false, "releases": []},
+    {
+      "appId": "whiteboard",
+      "name": "화이트보드",
+      "defaultInstall": false,
+      "releases": [
+        {
+          "version": "0.2.0",
+          "sourceCommit": "c93d80d75437f346d6228c209875107e86f27550",
+          "archiveSha256": "360b0f760ff81225a3c6a0de9c583c5f36b608dd8f9d4b3ac531e17212467279"
+        }
+      ]
+    },
     {"appId": "board", "name": "게시판", "defaultInstall": false, "releases": []}
   ]
 }
