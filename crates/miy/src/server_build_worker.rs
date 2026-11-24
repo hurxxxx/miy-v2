@@ -136,8 +136,8 @@ async fn docker(
     let mut export = match &output {
         Output::Archive(path) => Some(
             tokio::fs::OpenOptions::new()
-                .create_new(true)
-                .write(true)
+                .create(true)
+                .append(true)
                 .open(path)
                 .await?,
         ),
@@ -147,7 +147,10 @@ async fn docker(
         let (mut out_open, mut err_open) = (true, true);
         let (mut out_buf, mut err_buf) = ([0u8; 8192], [0u8; 8192]);
         let mut captured = Vec::new();
-        let mut exported = 0u64;
+        let mut exported = match &export {
+            Some(file) => file.metadata().await?.len(),
+            None => 0,
+        };
         let mut logged = 0usize;
         while out_open || err_open {
             let (bytes, is_stdout) = tokio::select! {
@@ -294,6 +297,8 @@ fn extract_artifact(archive: &Path, root: &Path) -> Result<()> {
     );
     std::fs::create_dir(root)?;
     let mut archive = tar::Archive::new(std::fs::File::open(archive)?);
+    // Each docker cp stream is a complete tar, including its end markers.
+    archive.set_ignore_zeros(true);
     let mut seen = BTreeSet::new();
     let mut total = 0u64;
     for entry in archive.entries()? {
@@ -515,14 +520,20 @@ async fn execute(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<(
     .await
     .context("build_artifact_invalid")?;
     let artifact_archive = scratch.path.join("artifact.tar");
-    let copied = docker(
-        pool,
-        id,
-        &control,
-        &args(&["cp", &format!("{container}:/miy/."), "-"]),
-        90,
-        Output::Archive(artifact_archive.clone()),
-    )
+    let copied = async {
+        for member in crate::runtime::IMAGE_CONTRACT_MEMBERS {
+            docker(
+                pool,
+                id,
+                &control,
+                &args(&["cp", &format!("{container}:/miy/{member}"), "-"]),
+                90,
+                Output::Archive(artifact_archive.clone()),
+            )
+            .await?;
+        }
+        Ok::<_, anyhow::Error>(())
+    }
     .await;
     let removed = remove_extraction(pool, id, &control).await;
     copied.context("build_artifact_invalid")?;
@@ -916,6 +927,42 @@ mod tests {
         assert!(!env.contains_key("PROVISION_DATABASE_URL"));
         assert!(!env.contains_key("MIY_MASTER_KEY"));
     }
+    #[test]
+    fn extracts_all_four_docker_copy_streams_without_packaging_server_dependencies() {
+        let tmp = tempfile::tempdir().unwrap();
+        let package = tmp.path().join("image");
+        std::fs::create_dir_all(package.join("server")).unwrap();
+        std::fs::write(package.join("server/codec.mjs"), "private runtime").unwrap();
+        for name in ["manifest.json", "build.json"] {
+            std::fs::write(package.join(name), "{}").unwrap();
+        }
+        for directory in ["migrations", "ui"] {
+            std::fs::create_dir(package.join(directory)).unwrap();
+            std::fs::write(package.join(directory).join("file"), directory).unwrap();
+        }
+        let archive = tmp.path().join("artifact.tar");
+        let mut output = std::fs::File::create(&archive).unwrap();
+        for member in crate::runtime::IMAGE_CONTRACT_MEMBERS {
+            let mut stream = tar::Builder::new(&mut output);
+            let source = package.join(member);
+            if source.is_dir() {
+                stream.append_dir_all(member, source).unwrap();
+            } else {
+                stream.append_path_with_name(source, member).unwrap();
+            }
+            stream.finish().unwrap();
+        }
+        let result = tmp.path().join("export");
+        extract_artifact(&archive, &result).unwrap();
+        for name in ["manifest.json", "build.json", "migrations/file", "ui/file"] {
+            assert_eq!(
+                std::fs::read(result.join(name)).unwrap(),
+                std::fs::read(package.join(name)).unwrap()
+            );
+        }
+        assert!(!result.join("server").exists());
+    }
+
     #[test]
     fn artifacts_reject_links_duplicates_and_unexpected_paths() {
         for (name, kind, duplicate) in [

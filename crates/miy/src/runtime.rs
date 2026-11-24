@@ -884,22 +884,37 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
         .await?;
     result
 }
-/// Preserve failures classified at their origin. Migration errors are terminal,
-/// including connection errors raised while executing a migration: only an
-/// explicitly classified availability failure may grant retry permission.
-/// Copy the image's `/miy` directory through a bounded tar stream. Docker's own
-/// extraction would write whatever the developer's image holds (any size, links,
-/// pipes) onto the platform disk before the contract is examined.
+// Server-side dependencies (such as a Node converter) stay in the image.
+pub(crate) const IMAGE_CONTRACT_MEMBERS: [&str; 4] =
+    ["manifest.json", "build.json", "migrations", "ui"];
+
 async fn copy_image_contract(container: &str, destination: &std::path::Path) -> Result<()> {
+    let mut wire_budget =
+        contract::MAX_ARTIFACT_BYTES + contract::MAX_ARTIFACT_ENTRIES as u64 * 2048;
+    let mut entry_budget = contract::MAX_ARTIFACT_ENTRIES;
+    for member in IMAGE_CONTRACT_MEMBERS {
+        let (bytes, entries) =
+            copy_image_member(container, member, destination, wire_budget, entry_budget).await?;
+        wire_budget -= bytes;
+        entry_budget -= entries;
+    }
+    Ok(())
+}
+
+async fn copy_image_member(
+    container: &str,
+    member: &str,
+    destination: &std::path::Path,
+    limit: u64,
+    entry_budget: usize,
+) -> Result<(u64, usize)> {
     use tokio::io::AsyncReadExt;
     let invalid = || RuntimeFailure::new(FailureCode::InvalidImageContract);
-    // Tar framing adds a header per member and block padding to the content.
-    let limit = contract::MAX_ARTIFACT_BYTES + contract::MAX_ARTIFACT_ENTRIES as u64 * 2048;
     let archive = destination.with_extension("tar");
     let _archive_cleanup = RemoveFileOnDrop(archive.clone());
     let mut command = tokio::process::Command::new("docker");
     command
-        .args(["cp", &format!("{container}:/miy/."), "-"])
+        .args(["cp", &format!("{container}:/miy/{member}"), "-"])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .kill_on_drop(true);
@@ -925,14 +940,24 @@ async fn copy_image_contract(container: &str, destination: &std::path::Path) -> 
         .map_err(|_| RuntimeFailure::new(FailureCode::DockerTimeout))??;
     anyhow::ensure!(status.success(), invalid());
     let destination = destination.to_owned();
-    tokio::task::spawn_blocking(move || {
-        contract::unpack_artifact(std::fs::File::open(&archive)?, &destination)
+    let entries = tokio::task::spawn_blocking(move || {
+        let mut tar = tar::Archive::new(std::fs::File::open(&archive)?);
+        let mut count = 0;
+        for member in tar.entries_with_seek()? {
+            member?;
+            count += 1;
+            anyhow::ensure!(count <= entry_budget, "artifact_entry_limit");
+        }
+        contract::unpack_artifact(std::fs::File::open(&archive)?, &destination)?;
+        Ok::<_, anyhow::Error>(count)
     })
     .await?
     .map_err(|_| invalid())?;
-    Ok(())
+    Ok((bytes, entries))
 }
 
+/// Preserve failures classified at their origin. Migration errors are terminal,
+/// including connection errors raised while executing a migration.
 pub(crate) fn classify_database_prepare_failure(error: anyhow::Error) -> RuntimeFailure {
     if let Some(failure) = error.downcast_ref::<RuntimeFailure>() {
         return failure.clone();
