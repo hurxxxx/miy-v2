@@ -1,0 +1,191 @@
+{
+  "host": "miy.works",
+  "dateUtc": "2026-11-24",
+  "scope": "Shared Core, worker, portal, frame runtime and downloadable CLI. Three first-party apps deployed to dev.",
+  "platform": {
+    "coreCliVersion": "0.20.0",
+    "sdkBundleVersion": "0.15.0",
+    "schema": 35,
+    "sourceCommit": "bb92db3e808b14722c94a0c3366d88590d8d4a2d",
+    "portalCommit": "6e8ba7d4db8a02e09928bf0891b90086643e7fe0",
+    "catalogCommit": "a45914a8f6060cae27c674351b466597540b4100",
+    "backendServices": [
+      "miy-prod-serve",
+      "miy-prod-worker"
+    ]
+  },
+  "cli": {
+    "candidate": "https://github.com/hurxxxx/miy-v2/actions/runs/45361299424",
+    "publishedArchives": 5,
+    "tunnelHelpers": 2,
+    "publicChecksumVerification": {
+      "verified": true,
+      "serverUrl": "https://portal.miy.works",
+      "commit": "bb92db3e808b14722c94a0c3366d88590d8d4a2d",
+      "version": "0.20.0",
+      "downloads": 7,
+      "bytes": 259069102
+    },
+    "githubReleasePublished": false
+  },
+  "backup": {
+    "onlineDatabases": 17,
+    "coreRestoreVerified": true,
+    "restoredSchemaBefore": 34,
+    "migrationRehearsal": {
+      "exitCode": 0,
+      "migrationVersionAfter": 35
+    }
+  },
+  "apps": [
+    {
+      "releaseId": "f070cd70-935b-40b8-b364-affe61ce0952",
+      "version": "0.3.0",
+      "sourceCommit": "bb92db3e808b14722c94a0c3366d88590d8d4a2d",
+      "imageId": "sha256:2a8a5bb1a47b4fa5bc9ad34d4e3d85ddbb87ace0e31e305cbaccec9f3fabff9b",
+      "runtimeStatus": "running",
+      "dbStatus": "ready",
+      "app": "docs",
+      "health": "PASS",
+      "approvedPermissions": [
+        "platform:directory:read"
+      ],
+      "prodVersion": "0.2.0",
+      "prodReleaseId": "8f91b648-15e5-454a-b805-bf9582a680b3"
+    },
+    {
+      "releaseId": "ed955e99-3cc3-4e18-a350-2da371ef1511",
+      "version": "0.3.0",
+      "sourceCommit": "bb92db3e808b14722c94a0c3366d88590d8d4a2d",
+      "imageId": "sha256:6876e2e74c014fab9763c0459d7112f566124655cd8fa4536acdff31c86b6dd5",
+      "runtimeStatus": "running",
+      "dbStatus": "ready",
+      "app": "whiteboard",
+      "health": "PASS",
+      "approvedPermissions": [
+        "platform:directory:read"
+      ],
+      "prodVersion": "0.2.0",
+      "prodReleaseId": "d375ddf9-32e9-48ee-8751-ab24ae44d28b"
+    },
+    {
+      "releaseId": "0067b915-f92a-42db-bdd8-e6a1c1339a2c",
+      "version": "0.2.0",
+      "sourceCommit": "bb92db3e808b14722c94a0c3366d88590d8d4a2d",
+      "imageId": "sha256:d036693c64ef268eca59697ff91c6ef5d5983b554b055280a2e508f09f61601a",
+      "runtimeStatus": "running",
+      "dbStatus": "ready",
+      "app": "messenger",
+      "health": "PASS",
+      "approvedPermissions": [
+        "platform:directory:read",
+        "platform:files:read",
+        "platform:files:write",
+        "platform:notifications:write"
+      ],
+      "prodVersion": "0.1.1",
+      "prodReleaseId": "254260ae-5753-415c-b5ec-8d13b69e004d"
+    }
+  ],
+  "signup": {
+    "policy": "Admin approves the request, delivers a one-time link to the submitted email, then the applicant chooses their sign-in name and password. Ordinary accounts start without app grants.",
+    "isolatedBackend": "Deduplication, rejection, administrator-only approval, link reissue, email binding and account creation verified using PostgreSQL, HTTP and an IdP test double.",
+    "liveBrowser": {
+      "status": "PASS",
+      "publicSignup": true,
+      "readyForApproval": true,
+      "publicInstallGuide": true,
+      "agentInstructions": 2,
+      "accountsCreated": 0
+    }
+  },
+  "setupGuide": {
+    "url": "https://portal.miy.works/cli/install",
+    "agentRunbook": "https://portal.miy.works/api/v1/cli/agent-setup",
+    "localStdioAgainstLivePlatform": {
+      "project": "isolated private local project",
+      "Codex": "generated project configuration launched miy_app and live get_contract passed",
+      "Claude Code": "generated project configuration launched miy_app and live get_contract passed"
+    }
+  },
+  "appTabs": {
+    "accountLimit": 10,
+    "devBrowserBenchmark": {
+      "measurement": "Time from a rail click to the target app layout becoming visible. Thirty round trips between Docs and Whiteboard after two initial opens.",
+      "before": {
+        "stage": "before",
+        "switches": 60,
+        "launches": 62,
+        "p95Ms": 1057,
+        "resident": 1
+      },
+      "after": {
+        "stage": "after",
+        "switches": 60,
+        "launches": 2,
+        "p95Ms": 59,
+        "resident": 2,
+        "signupAndGuide": "PASS"
+      }
+    },
+    "liveDevEditing": {
+      "docs": "switched while editing, returned read-only, saved text confirmed",
+      "whiteboard": "switched after drawing, returned read-only, saved rectangle confirmed",
+      "docsCleanup": "PASS",
+      "whiteboardCleanup": "PASS"
+    },
+    "liveDevDocumentReconnect": {
+      "docs": "retained draft while disconnected, flushed after reconnect and returned read-only",
+      "docsCleanup": "PASS"
+    },
+    "liveDevMessenger": {
+      "status": "PASS",
+      "frameLaunches": 1,
+      "socketClosedOnHome": true,
+      "reconnectedOnReturn": true
+    },
+    "isolatedFiveMinuteFixtures": [
+      {
+        "residentFrames": 1,
+        "rendererRssMiB": 146,
+        "rendererCpuSeconds": 0.48,
+        "installationListPolls": 100,
+        "requests": 105,
+        "websockets": 0
+      },
+      {
+        "residentFrames": 5,
+        "rendererRssMiB": 174,
+        "rendererCpuSeconds": 0.6,
+        "installationListPolls": 100,
+        "requests": 105,
+        "websockets": 0
+      },
+      {
+        "residentFrames": 10,
+        "rendererRssMiB": 203,
+        "rendererCpuSeconds": 0.79,
+        "installationListPolls": 100,
+        "requests": 105,
+        "websockets": 0
+      }
+    ]
+  },
+  "validation": [
+    "cargo test --workspace --locked (isolated CLI config): 263 passed, 7 ignored opt-in tests",
+    "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings: PASS",
+    "scripts/runtime-regression/run.py: 164 isolated PostgreSQL/HTTP/Docker observations passed",
+    "pnpm typecheck: PASS",
+    "Portal Playwright: 131 passed, 3 opt-in soak cases passed separately. Two targeted tests passed after the web session recovery link and signup approval test.",
+    "Install guide Playwright: 7 passed. App Vitest: Docs 138, Whiteboard 72, Messenger 210 passed.",
+    "Public download archives and helper images passed checksum verification."
+  ],
+  "recovered": [
+    "The first rollout stopped before migration because runuser was missing from the helper PATH. Rollback passed and rollout with the absolute executable path passed.",
+    "Force-closed test browsers held frame slots. The normal session management API released the identified QA sessions. The capacity notice links to that screen."
+  ],
+  "notRun": [
+    "Creating an actual shared-platform Keycloak account for a live applicant. The production public signup form and approval page were checked, and full account creation was verified in isolation.",
+    "Interactive Codex and Claude Code conversations. Each generated project configuration started miy_app and returned the live get_contract response."
+  ]
+}

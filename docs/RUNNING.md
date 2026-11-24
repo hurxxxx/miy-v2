@@ -10,7 +10,7 @@
 
 배포받은 클라이언트로 원격 운영만 수행할 때는 Rust·Node·Docker가 필요하지 않다. CLI를 소스에서 빌드할 때는 Rust 도구체인과 OS의 네이티브 링크 도구가 필요하다. 앱 개발 도구는 아래 [개발 방식별 조건](#로컬-개발-빌드와-dev-배포)을 따른다. 사용자 전용 설치 경로를 사용하고 시스템 전역 PATH·인코딩·TLS 신뢰 설정을 임의로 변경하지 않는다.
 
-서버의 **CLI 설치** 화면(`/cli/install`)에서 운영체제에 맞는 명령 한 줄을 복사한다. 브라우저에서 패키지를 먼저 내려받거나 압축을 풀 필요가 없다. 예를 들어 서버가 `https://PLATFORM`이라면 다음과 같다(실제 주소로 바꾼다).
+서버의 **통합 설치** 화면(`/cli/install`)에서 운영체제에 맞는 명령을 복사한다. 계정이 처음이면 화면의 **회원가입 신청**을 이용한다. 콘솔 관리자가 승인한 링크로 비밀번호를 설정한 뒤 CLI에 로그인한다. 브라우저에서 패키지를 먼저 내려받거나 압축을 풀 필요가 없다. 예를 들어 서버가 `https://PLATFORM`이라면 다음과 같다(실제 주소로 바꾼다).
 
 ```sh
 curl -fsSL 'https://PLATFORM/api/v1/cli/install.sh' | bash
@@ -41,7 +41,7 @@ miy describe --command "app deploy"
 
 Unix 배포물은 해당 OS/CPU의 tar.gz와 게시 SHA-256을 확인한 뒤 새 디렉터리에 푼다. 그 안에서 `bash ./install-cli.sh --prefix "$HOME/.local/bin" --server https://PLATFORM`을 실행하면 동봉된 `release.json`과 바이너리를 사용하고 Rust 빌드를 하지 않는다. 별도 실행 파일은 `--from /absolute/path/to/miy`로 지정한다. 소스 checkout의 `bash scripts/install-cli.sh`만 클라이언트를 빌드한다. shell profile/PATH는 자동 변경하지 않는다. Windows의 GUI·수동 ZIP 설치와 PowerShell 조건은 [Windows 안내](WINDOWS-ACCEPTANCE.md)를 따른다. 프로젝트 실행 파일은 Unix에서 `.miy-tools/miy`, Windows에서 `.miy-tools/miy.exe`다.
 
-플랫폼의 **CLI 설치** 화면(`/cli/install`)은 서버 `MIY_ORIGIN`에서 읽은 주소를 Unix의 `--server` 또는 Windows의 `-Server`에 넣은 명령을 제공한다. 검증한 배포물을 풀어 그 디렉터리에서 명령을 실행한다. 공통 실행 파일에 특정 운영 도메인을 내장하지 않으므로 같은 CLI를 다른 서버에도 사용할 수 있다. 설치 안내 API는 `GET /api/v1/cli/install`이며 요청의 Host나 브라우저 주소를 서버 설정 대신 사용하지 않는다.
+플랫폼의 **통합 설치** 화면(`/cli/install`)은 서버 `MIY_ORIGIN`에서 읽은 주소를 Unix의 `--server` 또는 Windows의 `-Server`에 넣은 명령을 제공한다. 검증한 배포물을 풀어 그 디렉터리에서 명령을 실행한다. 공통 실행 파일에 특정 운영 도메인을 내장하지 않으므로 같은 CLI를 다른 서버에도 사용할 수 있다. 설치 안내 API는 `GET /api/v1/cli/install`이며 요청의 Host나 브라우저 주소를 서버 설정 대신 사용하지 않는다.
 
 CLI에는 기본 IP·도메인이 없다. 설치 명령의 서버 인자 또는 사용자가 직접 입력한 URL만 저장한다. 주소를 생략한 대화형 설치는 주소 입력을 요청하고, 입력 취소·비대화형 설치는 실행 파일만 설치한 뒤 서버 미등록 상태와 `miy context init`을 안내한다. 설치 후 해당 명령을 실행하거나 서버 미등록 상태에서 대화형 로그인을 시작하면 주소를 입력할 수 있다. URL에는 `http://` 또는 `https://`를 명시한다. 기존 설정과 자격증명은 보존하며, 전달한 주소가 기존 활성 연결과 다르면 다른 서버 추가·선택 절차를 안내한다. context 이름 `default`는 저장 이름이며 미리 정해진 서버 주소를 뜻하지 않는다. 이전 CLI 0.5 후보에는 이 흐름이 포함되어 있지 않다.
 

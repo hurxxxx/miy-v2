@@ -7,16 +7,16 @@
 | 항목 | 새 호스트 구성 |
 | --- | --- |
 | 서버 | `185.223.207.238`, Ubuntu 26.04.1 LTS, 3 vCPU, 약 12GiB RAM |
-| 배포 소스 | Core·worker `fc0f38f`, 게시 CLI·웹·프레임 런타임 `c93d80d`. Core/CLI 0.19.0, SDK 번들 0.14.0, schema 34 |
+| 배포 소스 | Core·worker·CLI·프레임 런타임 `bb92db3`, 포털 `6e8ba7d`, 앱 카탈로그 `a45914a`. Core/CLI 0.20.0, SDK 번들 0.15.0, schema 35 |
 | 업무 포털 | `https://portal.miy.works` |
 | 관리·CLI 승인·IdP | `https://console.miy.works` |
 | 내부 앱 개발 포털 | `https://dev.miy.works` |
 | 설치별 앱 프레임 | `https://app-<32자리 키>.miy.works` |
 | 서비스·계정 | `miy-prod-serve`, `miy-prod-worker`, OS 사용자 `miy` |
 | 상태·바이너리 | `/srv/miy-prod`(0700), `/srv/miy-prod/bin/miy-server` |
-| CLI 설치 안내·HTTP MCP | `https://portal.miy.works/cli/install`, `https://portal.miy.works/mcp` |
-| 사용자 CLI | `/home/miy/.local/bin/miy` 0.19.0. `default` context → 업무 포털 |
-| 계정 발급 | 콘솔 **플랫폼 관리 → 사용자 초대**의 초대·재설정 링크. 로그인 서버 관리 호출은 loopback 18181, 서비스 클라이언트 `miy-accounts` |
+| 통합 설치·HTTP MCP | `https://portal.miy.works/cli/install`, `https://portal.miy.works/mcp` |
+| 사용자 CLI | `/home/miy/.local/bin/miy` 0.20.0. `default` context → 업무 포털 |
+| 계정 발급 | 공개 `/signup`에서 신청하고 콘솔 `/admin/users`의 **회원가입 신청**에서 승인·거절한다. 관리자가 일회용 링크를 직접 전달한다. 기존 초대·비밀번호 재설정도 같은 화면에서 제공한다. 로그인 서버 관리 호출은 loopback 18181, 서비스 클라이언트 `miy-accounts` |
 | 백업 | 매일 03:30 KST 무중단 `miy-prod-online-backup`(14일 보관), 변경 전 중지 백업 `miy-prod-backup` |
 | DB·Keycloak | `miy-prod-postgres-1`, `miy-prod-keycloak-1`; loopback 15432, 18181 |
 | Core 내부 포트 | 업무 18080, 콘솔 18081, 앱 개발 18082, 프레임 18083; 모두 loopback |
