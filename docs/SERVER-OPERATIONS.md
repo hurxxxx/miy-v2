@@ -7,7 +7,7 @@
 | 항목 | 새 호스트 구성 |
 | --- | --- |
 | 서버 | `185.223.207.238`, Ubuntu 26.04.1 LTS, 3 vCPU, 약 12GiB RAM |
-| 배포 소스 | Core·worker·게시 CLI·웹·프레임 런타임 `9fe1eac`. Core/CLI 0.18.0, SDK 번들 0.13.0, schema 34 |
+| 배포 소스 | Core·worker `fc0f38f`, 게시 CLI·웹·프레임 런타임 `c93d80d`. Core/CLI 0.19.0, SDK 번들 0.14.0, schema 34 |
 | 업무 포털 | `https://portal.miy.works` |
 | 관리·CLI 승인·IdP | `https://console.miy.works` |
 | 내부 앱 개발 포털 | `https://dev.miy.works` |
@@ -15,7 +15,7 @@
 | 서비스·계정 | `miy-prod-serve`, `miy-prod-worker`, OS 사용자 `miy` |
 | 상태·바이너리 | `/srv/miy-prod`(0700), `/srv/miy-prod/bin/miy-server` |
 | CLI 설치 안내·HTTP MCP | `https://portal.miy.works/cli/install`, `https://portal.miy.works/mcp` |
-| 사용자 CLI | `/home/miy/.local/bin/miy` 0.18.0. `default` context → 업무 포털 |
+| 사용자 CLI | `/home/miy/.local/bin/miy` 0.19.0. `default` context → 업무 포털 |
 | 계정 발급 | 콘솔 **플랫폼 관리 → 사용자 초대**의 초대·재설정 링크. 로그인 서버 관리 호출은 loopback 18181, 서비스 클라이언트 `miy-accounts` |
 | 백업 | 매일 03:30 KST 무중단 `miy-prod-online-backup`(14일 보관), 변경 전 중지 백업 `miy-prod-backup` |
 | DB·Keycloak | `miy-prod-postgres-1`, `miy-prod-keycloak-1`; loopback 15432, 18181 |
@@ -92,6 +92,8 @@ CLI 업데이트 안내 후속으로 Core·worker·웹과 CLI 0.12.1을 같은 �
 **2026-11-22~23 0.17.0.** 백업 복원본에서 schema 27→34와 카탈로그를 리허설한 뒤 공통 기능과 코어·웹·프레임 런타임을 반영했다. CLI 0.17.0·SDK 0.12.0과 공용 UI 2.0.1을 게시했다. 이어서 관리자 콘솔, 포털의 환경 표시, 에이전트 설정 안내를 반영하는 동안 게시 CLI의 소스는 `5fd2a55`로 유지했다. [0.17.0 배포와 후속 반영 기록](releases/miy-works-0.17.0-2026-11-22-deployment.json)
 
 **2026-11-23 0.18.0.** 포털과 프레임 런타임을 먼저 반영했고 Core·worker, CLI 패키지 5종·helper 2종을 같은 출처로 갱신했다. 격리 복원을 확인한 백업과 배포 전 실행 파일·정적 진입 파일의 위치는 [배포 기록](releases/miy-works-0.18.0-2026-11-23-deployment.json)에 있다.
+
+**2026-11-24 0.19.0.** Core·worker와 프레임 런타임에 공동편집용 바이너리 전송을 반영하고, 포털과 CLI를 같은 커밋에서 게시했다. 이어서 Core·worker가 이미지에서 명세·빌드 정보·마이그레이션·UI만 가져오도록 수정해 Node 변환기가 앱 컨테이너 안에서 실행되게 했다. Docs·화이트보드 0.2.0의 공식 카탈로그 해시와 복구 위치는 [배포 기록](releases/miy-works-0.19.0-2026-11-24-deployment.json)에 있다.
 
 `app.release-source.v1`을 반영한 서버에서는 `MIY_ARTIFACTS` 아래 `.builds/sources/`를 Core DB와 함께 비공개로 백업한다. Core DB에는 릴리스와 빌드 영수증이 있고 아카이브 바이트는 이 디렉터리에 있다. 복원 후 [릴리스 소스 다운로드](RUNNING.md#릴리스-소스-다운로드와-복구)로 SHA-256을 확인한다. 현재 구현은 성공한 빌드의 소스도 보관한다. 릴리스로 연결되지 않은 아카이브의 자동 만료 정책은 후속 범위다.
 

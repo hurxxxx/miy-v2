@@ -8,7 +8,7 @@ CLI·Windows 설치기의 후보 빌드, 서버 다운로드 게시, 정식 GitH
 
 dwdcc.kr의 게시 버전은 **Core·CLI 0.13.0, SDK 번들 0.11.0, 코어 schema 25**다. CLI는 오프라인 `app source-pin`, 확인한 상태를 조건으로 한 배포·승격, 후임 담당자가 공식 릴리스 ID로 dev에 재배포하는 `app deploy --release`를 제공한다. 서버가 접수를 거절한 빌드는 같은 커밋으로 다시 요청할 수 있고, 응답만 유실된 요청은 기존 ID로 재개한다. [공식 앱 공급 절차](RUNNING.md#공식-앱-공급과-설치)
 
-miy.works의 게시 버전은 **Core·CLI 0.18.0, SDK 번들 0.13.0, 개발 지침 1.0.4, 코어 schema 34**다. 게시 CLI 버전과 API 호환성 검사는 `9fe1eac`를 기준으로 사용한다. [0.18.0 반영 기록](releases/miy-works-0.18.0-2026-11-23-deployment.json)
+miy.works는 **Core·CLI 0.19.0, SDK 번들 0.14.0, 개발 지침 1.0.4, 코어 schema 34**를 제공한다. `c93d80d`에서 빌드한 CLI 5종과 Linux 연결 도구 2종의 공개 다운로드 해시를 검증했다. [0.19.0 반영 기록](releases/miy-works-0.19.0-2026-11-24-deployment.json)
 
 0.15.0은 릴리스 소스 복구를 추가했고 0.16.0은 오프라인 앱 하네스 안내와 검사를 추가했다. [0.15.0 반영 기록](releases/miy-works-0.15.0-2026-11-21-deployment.json) · [0.16.0 반영 기록](releases/miy-works-0.16.0-2026-11-21-deployment.json)
 

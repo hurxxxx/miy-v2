@@ -1,0 +1,155 @@
+{
+  "status": "PASS",
+  "date": "2026-11-24",
+  "origin": "https://portal.miy.works",
+  "version": "0.19.0",
+  "bundleVersion": "0.14.0",
+  "guidanceVersion": "1.0.4",
+  "schema": 34,
+  "serverSourceCommit": "fc0f38fc47abef8468972ea6334ae09bc07a6d0d",
+  "cliWebFrameSourceCommit": "c93d80d75437f346d6228c209875107e86f27550",
+  "catalogCommit": "316bd0d",
+  "cliReleaseRun": 45311305786,
+  "platform": {
+    "publicDownloadsVerified": {
+      "cliTargets": 5,
+      "linuxHelpers": 2
+    },
+    "publicOriginsChecked": 3,
+    "linuxOnlineInstall": "PASS",
+    "newAppSdkFilesVerified": [
+      "sdk/browser/live-binary.ts",
+      "sdk/collab/client.ts",
+      "sdk/collab/src/lib.rs"
+    ],
+    "hashes": {
+      "server": "ce8808c7496678e2f67641a00c7d7ec30d84d4a73c613f91f5ff82e13ebeefd7",
+      "cli": "734f22693f270c64905524f8f3766f8be385e7ced893a348d34ae54a78a48cf4",
+      "catalog": "a037b5796733ad29a3c8307707993f2534bed45bbf51194c03b2e6189708f97e",
+      "portal": "195af9cbde4fb28bff68db08c1b41f8abdad7b1cb749cc7b2cc900dff4cd9b78",
+      "frame": "f051223addee5d19813355ae6b2a83fb355c9ffd95d258d869f9476a0d363654"
+    }
+  },
+  "officialApps": {
+    "docs": {
+      "releaseId": "8f91b648-15e5-454a-b805-bf9582a680b3",
+      "version": "0.2.0",
+      "sourceCommit": "c93d80d75437f346d6228c209875107e86f27550",
+      "imageId": "sha256:e9b8187bbabc58d9956b0cc0c99873a671941124314b5eba15af34286564005c",
+      "runtimeStatus": "running",
+      "dbStatus": "ready",
+      "archiveSha256": "7eed0dceca16c1473ea3cc738f917fd865cd9f8fbc2a3cd1c12a6a539032bbc5",
+      "health": "PASS",
+      "devPortalEntry": "PASS",
+      "unsignedEditingSession": "denied",
+      "blockNoteImageRoundTrip": "PASS",
+      "buildId": "a349fd78-ac8f-4bc3-a91e-03b1080644dc",
+      "environment": "dev",
+      "releaseAcceptance": "awaiting_acceptance",
+      "approvedPermissions": []
+    },
+    "whiteboard": {
+      "releaseId": "d375ddf9-32e9-48ee-8751-ab24ae44d28b",
+      "version": "0.2.0",
+      "sourceCommit": "c93d80d75437f346d6228c209875107e86f27550",
+      "imageId": "sha256:17a723b2ded4c02857cd13ae47f8213c7120c806786f9621ec3a71c3b8b42cae",
+      "runtimeStatus": "running",
+      "dbStatus": "ready",
+      "archiveSha256": "360b0f760ff81225a3c6a0de9c583c5f36b608dd8f9d4b3ac531e17212467279",
+      "health": "PASS",
+      "devPortalEntry": "PASS",
+      "unsignedEditingSession": "denied",
+      "buildId": "dc323ce6-be34-4ca7-b8f9-2e2813fd39cb",
+      "environment": "dev",
+      "releaseAcceptance": "awaiting_acceptance",
+      "approvedPermissions": []
+    }
+  },
+  "checks": [
+    {
+      "command": "cargo test --locked --workspace",
+      "environment": "Dedicated CLI config, server hotfix",
+      "passed": 263,
+      "ignored": 7
+    },
+    {
+      "command": "cargo clippy --locked --workspace --all-targets -- -D warnings",
+      "result": "PASS"
+    },
+    {
+      "command": "python3 scripts/test-core-ops.py",
+      "passed": 108
+    },
+    {
+      "command": "miy app check",
+      "apps": [
+        "docs",
+        "whiteboard"
+      ],
+      "result": "PASS"
+    },
+    {
+      "scope": "isolated PostgreSQL app API tests",
+      "docs": 52,
+      "whiteboard": 29
+    },
+    {
+      "scope": "frontend unit tests",
+      "docs": 137,
+      "whiteboard": 72
+    },
+    {
+      "scope": "isolated Chromium owner and editor",
+      "result": "PASS",
+      "checks": [
+        "concurrent typing within one paragraph",
+        "edits to different shapes and conflicting versions of the same shape",
+        "awareness",
+        "offline changes rejoined",
+        "saved state restored after app process restart",
+        "revocation during editing",
+        "old generation fenced after version restore",
+        "initial sync larger than 64 KiB"
+      ]
+    },
+    {
+      "command": "python3 scripts/official-apps.py install",
+      "result": "PASS",
+      "environment": "dev, exact source pin and server-built image for each app"
+    }
+  ],
+  "correctedFailures": [
+    {
+      "step": "offline portal dependency installation",
+      "reason": "package absent from host cache",
+      "resolution": "Built from the frozen lockfile after fetching missing packages."
+    },
+    {
+      "app": "docs",
+      "buildId": "651bed19-3435-4a82-ab23-cd186d6a1bf0",
+      "code": "build_artifact_invalid",
+      "resolution": "Build verification and deployment copy only the manifest, build metadata, migrations, and UI. The Node codec and its dependencies run inside the image."
+    },
+    {
+      "step": "hotfix unit tests with active host CLI context",
+      "resolution": "Reran the suite with an isolated empty MIY_CONFIG_DIR."
+    },
+    {
+      "app": "docs",
+      "buildId": "2e8b6162-61d2-4e16-99d9-5af85f6c6b89",
+      "code": "docker_storage_low",
+      "resolution": "Freed development compiler cache space and retried with the configured storage floor."
+    }
+  ],
+  "rollback": {
+    "preCatalogBackup": "/srv/miy-backups/online/20261124T021802Z",
+    "preServerFixBackup": "/srv/miy-backups/online/20261124T024706Z",
+    "coreRestoreCheckedForBoth": true,
+    "platformBefore019": "/srv/miy-prod/evidence/realtime-editing.GJxQmoWL/before-5upl4ecb",
+    "serverBeforeExportFix": "/srv/miy-prod/evidence/realtime-editing.GJxQmoWL/before-server-fix-re03gn3u/miy-server"
+  },
+  "notRun": [
+    "Two signed-in end users editing together on the installed dev portal. The two-user browser checks ran in isolation.",
+    "App prod promotion and production end-user acceptance."
+  ]
+}
