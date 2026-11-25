@@ -80,6 +80,7 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
         | "/preview/apps/{app}/connections/{target}/api/{*path}" => Access::Portal,
         // CLI, delegation and backend continuation bearers keep the published address.
         "/artifacts/{hash}/ui/{*path}"
+        | "/preview/apps/{app}/context"
         | "/apps/{app}/releases/{release}/source"
         | "/installations/{id}/api/{*path}"
         | "/installations/{id}/platform/directory"
@@ -302,6 +303,7 @@ mod tests {
             "/api/v1/installations/{id}/files/{*path}",
             "/api/v1/installations/{id}/platform/files",
             "/api/v1/installations/{id}/platform/files/{file}/content",
+            "/api/v1/preview/apps/{app}/context",
             "/api/v1/preview/apps/{app}/platform/files",
             "/api/v1/preview/apps/{app}/platform/files/{*path}",
             "/api/v1/installations/{id}/connections/{target}/api/{*path}",

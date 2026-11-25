@@ -131,6 +131,11 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
             axum::routing::any(crate::connections::connect),
         )
         .route(
+            "/preview/apps/{app}/context",
+            axum::routing::get(crate::connections::preview_context)
+                .layer(middleware::map_response(no_store)),
+        )
+        .route(
             "/preview/apps/{app}/platform/directory",
             axum::routing::get(crate::connections::preview_directory),
         )
@@ -757,14 +762,14 @@ async fn session_guard(S(state): S<State>, mut request: Request, next: Next) -> 
         Err(e) => e.into_response(),
     }
 }
-/// Successful reads that still leave an audit row: directory, file and app
-/// connection reads. The matched route template decides. A caller-chosen path
-/// that merely contains `/files/` or `/connections/` is not one of them.
+/// Audit preview startup and reads of directory, file and app connection data.
+/// Match the route template so a caller-chosen path cannot select an audit rule.
 fn audited_read_route(route: &str) -> bool {
     matches!(
         route.strip_prefix("/api/v1").unwrap_or(route),
         "/installations/{id}/platform/directory"
             | "/apps/{app}/releases/{release}/source"
+            | "/preview/apps/{app}/context"
             | "/preview/apps/{app}/platform/directory"
             | "/installations/{id}/platform/files/by-request/{request}"
             | "/installations/{id}/platform/files/{file}"
@@ -806,6 +811,7 @@ fn delegated_route(route: &str, method: &axum::http::Method) -> bool {
             | "/apps/{app}/build-requests/{request}"
             | "/dev-sessions/{id}"
             | "/apps/{app}/dev-sessions/by-request/{request}"
+            | "/preview/apps/{app}/context"
             | "/artifacts/{hash}/ui/{*path}",
         ) => true,
         (
@@ -869,6 +875,7 @@ async fn capabilities(S(s): S<State>) -> Json<Value> {
         "runtime.official-release.v1",
         "runtime.preflight.v2",
         "development.sessions.v1",
+        "preview.context.v1",
         "auth.sessions.v1",
         "auth.device.v1",
         "runtime.jobs.v1",

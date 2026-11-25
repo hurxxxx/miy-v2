@@ -828,7 +828,16 @@ async fn execute(pool: &sqlx::PgPool, job: &sqlx::postgres::PgRow) -> Result<()>
             .execute(pool).await?;
         release
     };
-    sqlx::query("INSERT INTO installations(id,app_id,environment,release_id) VALUES($1,$2,$3,$4) ON CONFLICT(app_id,environment) DO NOTHING").bind(Uuid::new_v4()).bind(&app).bind(&env).bind(release).execute(pool).await?;
+    sqlx::query(
+        "INSERT INTO installations(id,app_id,environment,release_id)
+         SELECT CASE WHEN $2='dev' THEN initial_dev_installation_id ELSE gen_random_uuid() END,id,$2,$3
+         FROM apps WHERE id=$1 ON CONFLICT(app_id,environment) DO NOTHING",
+    )
+    .bind(&app)
+    .bind(&env)
+    .bind(release)
+    .execute(pool)
+    .await?;
     let inst = sqlx::query("SELECT * FROM installations WHERE app_id=$1 AND environment=$2")
         .bind(&app)
         .bind(&env)

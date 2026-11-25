@@ -18,6 +18,17 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Developer identity and stable dev data scope for a local preview.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewContext {
+    pub app_id: String,
+    pub environment: Environment,
+    pub subject_id: String,
+    /// Also used for the first dev installation. Possession grants no platform permissions.
+    pub installation_id: Uuid,
+}
+
 /// An installation as the installation lists, the runtime management list and the app
 /// detail return it. `canOpen`, `canManage` and `canPromote` are the decisions this
 /// credential would get.
@@ -690,6 +701,7 @@ pub fn schema() -> serde_json::Value {
     generator.subschema_for::<Vec<Installation>>();
     generator.subschema_for::<InstallationPage>();
     generator.subschema_for::<AppDetail>();
+    generator.subschema_for::<PreviewContext>();
     generator.subschema_for::<RuntimeJobPage>();
     generator.subschema_for::<AuditPage>();
     generator.subschema_for::<AdminOverviewResponse>();

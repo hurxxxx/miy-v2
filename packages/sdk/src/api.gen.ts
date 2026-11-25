@@ -458,6 +458,15 @@ export interface Preferences {
   timeZone: string;
 }
 
+/** Developer identity and stable dev data scope for a local preview. */
+export interface PreviewContext {
+  appId: string;
+  environment: Environment;
+  /** Also used for the first dev installation. Possession grants no platform permissions. */
+  installationId: string;
+  subjectId: string;
+}
+
 /** A stored acceptance check, as the test acceptance request recorded it. */
 export interface RecordedCheck {
   actor: string;

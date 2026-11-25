@@ -119,6 +119,28 @@ pub async fn preview_connect(
     });
     forward(&s, &p, &target, &inst, &permission, &path, &mut req).await
 }
+pub async fn preview_context(
+    S(s): S<State>,
+    axum::Extension(p): axum::Extension<Principal>,
+    Path(app): Path<String>,
+) -> ApiResult<Json<crate::api_contract::PreviewContext>> {
+    require_preview(&s, &p, &app).await?;
+    let installation_id = sqlx::query_scalar(
+        "SELECT COALESCE(i.id,a.initial_dev_installation_id) FROM apps a
+         LEFT JOIN installations i ON i.app_id=a.id AND i.environment='dev' WHERE a.id=$1",
+    )
+    .bind(&app)
+    .fetch_optional(&s.pool)
+    .await?
+    .ok_or_else(ApiError::not_found)?;
+    Ok(Json(crate::api_contract::PreviewContext {
+        app_id: app,
+        subject_id: p.id,
+        environment: crate::runtime_contract::Environment::Dev,
+        installation_id,
+    }))
+}
+
 pub async fn preview_directory(
     S(s): S<State>,
     axum::Extension(p): axum::Extension<Principal>,

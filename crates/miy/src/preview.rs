@@ -282,6 +282,28 @@ pub async fn run(port: u16, no_open: bool, database: DatabaseMode, runtime: Runt
     }
     Ok(())
 }
+pub(crate) async fn startup_installation(
+    session: &Session,
+    app: &str,
+    subject: &str,
+) -> Result<Uuid> {
+    let context: crate::api_contract::PreviewContext = serde_json::from_value(
+        app_cli::api(
+            session,
+            &format!("/api/v1/preview/apps/{app}/context"),
+            None,
+        )
+        .await?,
+    )?;
+    ensure!(
+        context.environment == crate::runtime_contract::Environment::Dev
+            && context.app_id == app
+            && context.subject_id == subject,
+        "invalid_preview_context"
+    );
+    Ok(context.installation_id)
+}
+
 async fn serve_preview(
     port: u16,
     no_open: bool,
@@ -317,22 +339,12 @@ async fn serve_preview(
     if *shutdown.borrow() != Shutdown::Running {
         return Ok(());
     }
-    // This endpoint checks developer authority, even when the app has no deployed release yet.
-    let preview_directory = app_cli::api(
+    let installation = startup_installation(
         &session,
-        &format!("/api/v1/preview/apps/{}/platform/directory", m.id),
-        None,
+        &m.id,
+        user["id"].as_str().context("missing_preview_subject")?,
     )
     .await?;
-    ensure!(
-        preview_directory["environment"] == "dev" && preview_directory["subjectId"] == user["id"],
-        "invalid_preview_directory_scope"
-    );
-    let installation: Uuid = preview_directory["installationId"]
-        .as_str()
-        .context("missing_preview_installation")?
-        .parse()
-        .context("invalid_preview_installation")?;
     app_cli::run("pnpm", &["build:preview"])?;
     app_cli::save(
         "dist/build.json",
@@ -931,7 +943,7 @@ async fn context(State(s): State<Arc<Preview>>) -> Json<Value> {
         json!({"appId":s.manifest.id,"installationId":s.installation,"releaseId":s.release,"user":{"id":s.user["id"],"name":s.user["name"]},"csrf":s.csrf}),
     )
 }
-async fn directory(State(s): State<Arc<Preview>>, req: Request) -> ApiResult<Json<Value>> {
+async fn directory(State(s): State<Arc<Preview>>, req: Request) -> ApiResult<Response> {
     if !s
         .manifest
         .requested_permissions
@@ -939,21 +951,16 @@ async fn directory(State(s): State<Arc<Preview>>, req: Request) -> ApiResult<Jso
     {
         return Err(ApiError::forbidden());
     }
-    Ok(Json(
-        app_cli::api(
-            &s.session,
-            &format!(
-                "/api/v1/preview/apps/{}/platform/directory{}",
-                s.manifest.id,
-                req.uri()
-                    .query()
-                    .map(|query| format!("?{query}"))
-                    .unwrap_or_default()
-            ),
-            None,
-        )
-        .await?,
-    ))
+    forward(
+        &s,
+        &format!(
+            "{}/api/v1/preview/apps/{}/platform/directory",
+            s.session.origin, s.manifest.id
+        ),
+        req,
+        None,
+    )
+    .await
 }
 async fn backend(
     State(s): State<Arc<Preview>>,
@@ -1358,6 +1365,42 @@ mod tests {
             backend_origin:"http://127.0.0.1:3".into(),backend_capability:"test-process-only-capability-000000000001".into(),
         }
     }
+    #[tokio::test]
+    async fn directory_query_preserves_the_release_permission_refusal() {
+        let mut preview = test_preview();
+        let request = || {
+            Request::builder()
+                .uri("/platform/directory?limit=1")
+                .body(axum::body::Body::empty())
+                .unwrap()
+        };
+        let denied = directory(State(Arc::new(preview.clone())), request())
+            .await
+            .unwrap_err();
+        assert_eq!(denied.status, axum::http::StatusCode::FORBIDDEN);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        preview.session.origin = format!("http://{}", listener.local_addr().unwrap());
+        preview
+            .manifest
+            .requested_permissions
+            .push("platform:directory:read".into());
+        let upstream = Router::new().route("/api/v1/preview/apps/test-app/platform/directory",
+            axum::routing::get(|req: Request| async move {
+                assert_eq!(req.uri().query(), Some("limit=1"));
+                (axum::http::StatusCode::FORBIDDEN, Json(json!({"error":{"code":"installation_permission_denied","requestId":"fixture-request"}})))
+            }));
+        let server = tokio::spawn(async move { axum::serve(listener, upstream).await });
+        let response = directory(State(Arc::new(preview)), request())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), axum::http::StatusCode::FORBIDDEN);
+        let body = to_bytes(response.into_body(), 1024).await.unwrap();
+        let error: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(error["error"]["requestId"], "fixture-request");
+        server.abort();
+    }
+
     fn private_request(s: &Preview) -> Request {
         Request::builder()
             .uri("/platform/directory")

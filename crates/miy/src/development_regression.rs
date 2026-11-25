@@ -140,6 +140,19 @@ async fn runtime_connection(secret: &Value) -> Result<sqlx::PgConnection> {
     Ok(sqlx::PgConnection::connect(url.as_str()).await?)
 }
 
+async fn preview_client(s: &State, parent: Uuid) -> Result<crate::app_cli::Session> {
+    let token = format!("miy_access_{}", Uuid::new_v4().simple());
+    sqlx::query("INSERT INTO cli_access_tokens(token_hash, session_id, expires_at) VALUES ($1,$2,now()+interval '15 minutes')")
+        .bind(contract::hash(&token)).bind(parent).execute(&s.pool).await?;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let origin = format!("http://{}", listener.local_addr()?);
+    let router = crate::http::router(s.clone());
+    tokio::spawn(async move { axum::serve(listener, router).await });
+    Ok(serde_json::from_value(
+        json!({"origin":origin,"token":token}),
+    )?)
+}
+
 async fn fixture_auth() -> Result<(
     Arc<auth::Auth>,
     tokio::task::JoinHandle<std::io::Result<()>>,
@@ -293,6 +306,37 @@ async fn shared_development_database() -> Result<()> {
     let new_parent = Uuid::new_v4();
     sqlx::query("INSERT INTO cli_sessions(id,user_id,client_id,client_name) VALUES($1,'developer',$2,'integration fixture')").bind(parent).bind(Uuid::new_v4()).execute(&pool).await?;
     sqlx::query("INSERT INTO cli_sessions(id,user_id,client_id,client_name) VALUES($1,'developer',$2,'fresh login fixture')").bind(new_parent).bind(Uuid::new_v4()).execute(&pool).await?;
+    let preview = preview_client(&s, parent).await?;
+    let app = "shared-dev-test";
+    let scope = crate::preview::startup_installation(&preview, app, "developer").await?;
+    let directory = format!("/api/v1/preview/apps/{app}/platform/directory");
+    let denied = crate::app_cli::api(&preview, &directory, None)
+        .await
+        .unwrap_err();
+    anyhow::ensure!(
+        crate::cli_error::classify(&denied).category == crate::cli_error::Category::Forbidden
+    );
+    let denied = crate::preview::startup_installation(&preview, "legacy-db", "developer")
+        .await
+        .unwrap_err();
+    anyhow::ensure!(
+        crate::cli_error::classify(&denied).category == crate::cli_error::Category::Forbidden
+    );
+    sqlx::query("INSERT INTO grants VALUES('developer','legacy-db','dev','develop')")
+        .execute(&pool)
+        .await?;
+    let legacy_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM installations WHERE app_id='legacy-db' AND environment='dev'",
+    )
+    .fetch_one(&pool)
+    .await?;
+    anyhow::ensure!(
+        crate::preview::startup_installation(&preview, "legacy-db", "developer").await?
+            == legacy_id
+    );
+    passed(
+        "preview startup before install checks develop, preserves existing installations and keeps directory access denied",
+    );
     const FIRST: &str = "CREATE TABLE app.records(id integer PRIMARY KEY,value text NOT NULL);";
     const SECOND: &str = "ALTER TABLE app.records ADD COLUMN category text;";
     const THIRD: &str = "ALTER TABLE app.records ADD COLUMN retained text;";
@@ -502,9 +546,41 @@ async fn shared_development_database() -> Result<()> {
     bridge.abort();
     drop(tunneled);
     let release = Uuid::new_v4();
-    let installation = Uuid::new_v4();
-    sqlx::query("INSERT INTO releases(id,app_id,version,artifact_hash,manifest,image_id) VALUES($1,'shared-dev-test','1.0.0','fixture','{}',$2)").bind(release).bind(format!("sha256:{}","a".repeat(64))).execute(&pool).await?;
-    sqlx::query("INSERT INTO installations(id,app_id,environment,release_id) VALUES($1,'shared-dev-test','dev',$2)").bind(installation).bind(release).execute(&pool).await?;
+    let mut manifest = request("release", &[FIRST, SECOND]).manifest;
+    manifest
+        .requested_permissions
+        .push("platform:directory:read".into());
+    sqlx::query("INSERT INTO releases(id,app_id,version,artifact_hash,manifest,image_id) VALUES($1,'shared-dev-test','1.0.0','fixture',$2,$3)")
+        .bind(release).bind(serde_json::to_value(manifest)?).bind(format!("sha256:{}","a".repeat(64))).execute(&pool).await?;
+    let installed = api(crate::domain::create_installation(
+        &s,
+        &principal(parent),
+        crate::domain::NewInstallation {
+            app_id: app.into(),
+            environment: "dev".into(),
+            release_id: release,
+        },
+    )
+    .await)?;
+    let installation: Uuid = serde_json::from_value(installed["id"].clone())?;
+    anyhow::ensure!(
+        installation == scope
+            && crate::preview::startup_installation(&preview, app, "developer").await? == scope
+    );
+    let denied = crate::app_cli::api(&preview, &directory, None)
+        .await
+        .unwrap_err();
+    anyhow::ensure!(crate::cli_error::classify(&denied).code == "installation_permission_denied");
+    sqlx::query("INSERT INTO installation_permissions(installation_id,release_id,revision,permissions,approved_by) VALUES($1,$2,1,$3,'developer')")
+        .bind(installation).bind(release).bind(json!(["platform:directory:read"])).execute(&pool).await?;
+    let directory_page = crate::app_cli::api(&preview, &directory, None).await?;
+    anyhow::ensure!(
+        directory_page["installationId"] == installation.to_string()
+            && directory_page["subjectId"] == "developer"
+    );
+    passed(
+        "first dev install uses the preview data scope and its directory still requires release approval",
+    );
     let deployed =
         worker::ensure_resource(&pool, "shared-dev-test", "dev", Some(installation)).await?;
     anyhow::ensure!(

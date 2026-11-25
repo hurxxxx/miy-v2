@@ -10,6 +10,10 @@ dwdcc.kr의 게시 버전은 **Core·CLI 0.13.0, SDK 번들 0.11.0, 코어 schem
 
 miy.works는 **Core·CLI 0.20.0, SDK 번들 0.15.0, 개발 지침 1.0.4, 코어 schema 35**를 제공한다. 통합 설치 메뉴에서 게시 CLI 5종과 코딩 에이전트용 서버별 설정 안내를 제공한다. [0.20.0 반영 기록](releases/miy-works-0.20.0-2026-11-24-deployment.json)
 
+0.20.1 소스 후보는 조직 앱의 첫 dev 설치 전에 로컬 프리뷰를 시작할 수 있다. 새 코어(schema 36)와 프로젝트 CLI를 함께 사용한다. `miy app dev`의 초기 개발 권한 확인과 디렉터리 API의 릴리스 권한 확인을 분리했다.
+
+Linux 격리 검증에서 실제 CLI의 프리뷰 시작 요청은 미설치 앱의 dev 개발 권한으로 성공했다. 기존 dev 설치의 ID 보존, 첫 설치와 프리뷰의 ID 일치, 디렉터리 권한 승인 전 거부·승인 후 조회를 확인했다. 공유 개발 DB 회귀 20개 항목이 통과했고 새 프로젝트는 CLI 0.20.1과 Codex·Claude Code 개발 지침 1.0.5를 생성했다.
+
 0.15.0은 릴리스 소스 복구를 추가했고 0.16.0은 오프라인 앱 하네스 안내와 검사를 추가했다. [0.15.0 반영 기록](releases/miy-works-0.15.0-2026-11-21-deployment.json) · [0.16.0 반영 기록](releases/miy-works-0.16.0-2026-11-21-deployment.json)
 
 앞서 0.14.0의 `e5ee24f`는 여러 CLI·MCP 호출에서 동시에 로그인 갱신할 때 다른 명령이 `reauthentication_required`로 끝나는 문제를 고쳤다. 0.13.0의 `f8228e1`은 2026-11-20에 게시했다. [0.14.0 반영 기록](releases/miy-works-0.14.0-2026-11-21-deployment.json) · [0.13.0 반영 기록](releases/miy-works-0.13.0-2026-11-20-deployment.json)

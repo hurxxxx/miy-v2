@@ -1517,6 +1517,32 @@
       ],
       "type": "object"
     },
+    "PreviewContext": {
+      "description": "Developer identity and stable dev data scope for a local preview.",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "environment": {
+          "$ref": "#/$defs/Environment"
+        },
+        "installationId": {
+          "description": "Also used for the first dev installation. Possession grants no platform permissions.",
+          "format": "uuid",
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "appId",
+        "environment",
+        "subjectId",
+        "installationId"
+      ],
+      "type": "object"
+    },
     "RecordedCheck": {
       "description": "A stored acceptance check, as the test acceptance request recorded it.",
       "properties": {

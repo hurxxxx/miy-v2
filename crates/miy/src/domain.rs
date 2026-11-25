@@ -223,15 +223,15 @@ pub async fn create_installation(
     if !matches {
         return Err(ApiError::bad("release_app_mismatch"));
     }
-    let id = Uuid::new_v4();
     let mut tx = policy::Write::begin(&state.pool).await?;
-    sqlx::query("INSERT INTO installations(id,app_id,environment,release_id) VALUES($1,$2,$3,$4)")
-        .bind(id)
-        .bind(&v.app_id)
-        .bind(&v.environment)
-        .bind(v.release_id)
-        .execute(&mut *tx)
-        .await?;
+    let id: Uuid = sqlx::query_scalar(
+        "INSERT INTO installations(id,app_id,environment,release_id)
+         SELECT initial_dev_installation_id,id,'dev',$2 FROM apps WHERE id=$1 RETURNING id",
+    )
+    .bind(&v.app_id)
+    .bind(v.release_id)
+    .fetch_one(&mut *tx)
+    .await?;
     tx.decide(p, &v.app_id, &v.environment, AppAction::Develop)
         .await?
         .commit()
@@ -503,6 +503,7 @@ pub fn catalog() -> Value {
         {"id":"connected_app_create","method":"POST","path":"/api/v1/installations/{id}/connections/{target}/api/{path}","permission":"use on source and target; declared app:TARGET:write + CSRF + source release","description":"Create through another app's API; target business authorization still applies"},
         {"id":"connected_app_update","method":"PATCH","path":"/api/v1/installations/{id}/connections/{target}/api/{path}","permission":"use on source and target; declared app:TARGET:write + CSRF + source release","description":"Update through another app's API in the same environment"},
         {"id":"connected_app_delete","method":"DELETE","path":"/api/v1/installations/{id}/connections/{target}/api/{path}","permission":"use on source and target; declared app:TARGET:write + CSRF + source release","description":"Delete through another app's API in the same environment"},
+        {"id":"preview_context","method":"GET","path":"/api/v1/preview/apps/{app}/context","permission":"CLI developer or dev_session delegation on app/dev","description":"Local preview startup identity. Available before first dev deployment. Directory and other data calls check their own release permissions.","output":schemars::schema_for!(crate::api_contract::PreviewContext)},
         {"id":"preview_directory","method":"GET","path":"/api/v1/preview/apps/{app}/platform/directory","permission":"develop on source app/dev and current dev installation directory approval","description":"Same bounded directory query and safe DTO as installed apps; browser credentials stay in local CLI gateway","input":schemars::schema_for!(crate::directory::DirectoryQuery)},
         {"id":"preview_app_read","method":"GET","path":"/api/v1/preview/apps/{app}/connections/{target}/api/{path}","permission":"develop on source/dev and use on target/dev","description":"Authenticated local-preview connection to a dev app API"},
         {"id":"preview_app_create","method":"POST","path":"/api/v1/preview/apps/{app}/connections/{target}/api/{path}","permission":"develop on source/dev and use on target/dev","description":"Local-preview dev connection; target business authorization applies"},
