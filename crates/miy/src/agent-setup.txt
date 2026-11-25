@@ -42,9 +42,11 @@ Run `miy --context CONTEXT --output json --no-input auth status`. If `data.authe
 miy --context CONTEXT --output json --no-input auth login --device-code --no-open --no-wait
 ```
 
-When `data.status = pending`, keep `data.loginId` and the selected context. Send the returned `data.verificationUrl`, `data.userCode` and time remaining from `data.expiresIn` to the user. For example, in the user's language: “Open {verificationUrl}, sign in to your MIY account and approve code {userCode}. It expires in {expiresIn} seconds. I’ll continue once you approve.” A new user can request an account at @MIY_ORIGIN@/signup; an administrator approves the request. Passwords and tokens belong in the browser and the CLI's protected store. Never request them or read credential files.
+When `data.status = pending`, keep `data.loginId` and the selected context. Make your next action a user-visible assistant message containing the actual `data.verificationUrl`, `data.userCode` and time remaining from `data.expiresIn`. Tool results and terminal output can be hidden from the user. For example, in the user's language: “Open {verificationUrl}, sign in to your MIY account and approve code {userCode}. It expires in {expiresIn} seconds. Tell me when you have approved so I can continue.” A new user can request an account at @MIY_ORIGIN@/signup; an administrator approves the request. Passwords and tokens belong in the browser and the CLI's protected store. Never request them or read credential files.
 
-After sending the instructions, wait on that login and inspect its JSON result:
+In a print-mode client, or whenever you cannot confirm the user can see an intermediate assistant message, **end this turn with the approval instructions**. Keep the context and loginId for the next turn; resume when the user confirms approval. If the client supports immediate user-visible messages, send the instructions first, then start the wait. The user must have the URL and code before a blocking wait starts.
+
+On resuming, wait on that same login and inspect its JSON result:
 
 ```text
 miy --context CONTEXT --output json --no-input auth wait LOGIN_ID

@@ -666,6 +666,7 @@ mod tests {
             "data.userCode",
             "data.loginId",
             "data.expiresIn",
+            "end this turn with the approval instructions",
             "login_wait_interrupted",
             "login_not_approved",
             "credential_storage_unavailable",
