@@ -1,6 +1,6 @@
 # MIY coding agent setup
 
-Use this runbook to set up an independent MIY app workspace for Codex or Claude Code. Execute the steps in the current user's workspace. Reuse the user's existing installation, account and project when they match this platform.
+You are setting up or developing an independent MIY app in the user's workspace. Run the commands yourself. Reuse the user's installation, account and project when they match this platform. A connection request finishes after the live MCP check in section 3. For app development or publication, continue only through the environment the user requested. Hand browser sign-in, project trust and administrator decisions to the appropriate person, then resume the same task.
 
 - Human setup page with install commands and copyable agent requests: @MIY_ORIGIN@/cli/install
 - Platform and CLI context origin: @MIY_ORIGIN@
@@ -26,7 +26,7 @@ Windows PowerShell
 & ([scriptblock]::Create((Invoke-RestMethod -Uri @MIY_WINDOWS_URL@)))
 ```
 
-Check `miy context list --output json`. Use a context whose origin is @MIY_ORIGIN@. If one is missing, choose an unused name and run:
+Check `miy context list --output json`. In data.contexts, select the name whose origin is @MIY_ORIGIN@. If several contexts match, use the one for the intended account. If one is missing, choose an unused name and run:
 
 ```text
 miy context add CONTEXT --url @MIY_ORIGIN@
@@ -34,37 +34,39 @@ miy context add CONTEXT --url @MIY_ORIGIN@
 
 Replace CONTEXT with the selected name in the remaining commands. Use that explicit context to avoid acting on a different server. Preserve other contexts and TLS verification.
 
-## 2. Authenticate
+## 2. Authenticate and hand off browser approval
 
-```text
-miy --context CONTEXT --output json --no-input auth status
-```
-
-If authentication is needed, start device login:
+Run `miy --context CONTEXT --output json --no-input auth status`. If `data.authenticated` is true and the context and account match, keep the session. For `error.code = login_required` or a CLI error explicitly requiring sign-in, start device login:
 
 ```text
 miy --context CONTEXT --output json --no-input auth login --device-code --no-open --no-wait
 ```
 
-Give the user `data.verificationUrl` and `data.userCode` and ask them to approve the request in their browser. After approval, use `data.loginId` in:
+When `data.status = pending`, keep `data.loginId` and the selected context. Send the returned `data.verificationUrl`, `data.userCode` and time remaining from `data.expiresIn` to the user. For example, in the user's language: “Open {verificationUrl}, sign in to your MIY account and approve code {userCode}. It expires in {expiresIn} seconds. I’ll continue once you approve.” A new user can request an account at @MIY_ORIGIN@/signup; an administrator approves the request. Passwords and tokens belong in the browser and the CLI's protected store. Never request them or read credential files.
+
+After sending the instructions, wait on that login and inspect its JSON result:
 
 ```text
 miy --context CONTEXT --output json --no-input auth wait LOGIN_ID
-miy --context CONTEXT --output json --no-input doctor --for operate
 ```
 
-Use the user's own account and the CLI's protected credential storage. The user completes any console approval or agent trust prompt.
+- On `data.status = authenticated`, verify `auth status` again in the same context and run `miy --context CONTEXT --output json --no-input doctor --for operate`.
+- On `login_wait_interrupted`, resume `auth wait` with the original loginId. On `login_context_mismatch`, use the context that started the request.
+- On `login_expired`, issue a fresh request if sign-in is still wanted and send the new URL and code. On `login_not_approved`, the request may have been denied, expired or consumed. Recheck `auth status`; if sign-in is still needed, ask whether to try again. Stop on an explicit refusal.
+- On `credential_storage_unavailable` or `login_credential_not_saved`, report the safe diagnostic and resolve local credential storage before starting another login. For other failures, inspect the CLI's error code and recovery instructions.
 
-## 3. Prepare the project and its MCP
+## 3. Prepare the app and prove the MCP connection
 
-- For an existing MIY app, open its project folder and check `miy context show --output json` there. Use the project when its selected origin matches this runbook. Ask before changing a context binding. Run `miy --context CONTEXT --no-input app setup` with the installed CLI and review any reported bundle or managed-file conflict.
-- For a new app, use the requested path, app ID and name. A setup-only request can use a new local workspace named `miy-agent-workspace`:
+For an existing MIY app, open its root and run `miy context show --output json` there. Check that its selected origin matches this runbook. Ask before changing a context binding. Run `miy --context CONTEXT --no-input app setup` with the installed global CLI. If it reports a bundle or managed-file conflict, inspect the error and `miy describe --topic updates` before changing files.
+
+For a new app, use the requested path, app ID and display name. For a setup-only workspace, for example:
 
 ```text
 miy --context CONTEXT --no-input app init ./miy-agent-workspace --id miy-agent-workspace --name "MIY agent workspace"
+cd miy-agent-workspace
 ```
 
-Run the following inside the app folder. Use its pinned Rust toolchain and its Node and pnpm requirements for local development.
+From the app root, use the project executable for app commands. Below, `miy` stands for `.miy-tools/miy` (PowerShell: `.\.miy-tools\miy.exe`). Use the pinned Rust toolchain and the project's Node and pnpm requirements.
 
 ```text
 miy --context CONTEXT --no-input component sync
@@ -72,17 +74,26 @@ miy --context CONTEXT --no-input app check --harness-only
 miy --context CONTEXT --no-input doctor --for develop
 ```
 
-Open or restart Codex or Claude Code in that folder. The project settings register the `miy_app` stdio MCP using the project CLI (`.miy-tools/miy` or `.miy-tools/miy.exe`). Use the same OS user and context. After the user completes any required project trust prompt, check that the available tools include `miy_app`, then call:
+Open or restart the agent in this app root as the same OS user. Codex reads `.codex/config.toml`; Claude Code reads `.mcp.json`. The user approves project trust or the MCP prompt when required. Both configurations start the project's `miy_app` server over stdio. Call its tools in the actual agent session:
 
 ```text
 get_cli_help({"topic":"api"})
 get_contract({})
 ```
 
-`miy describe --topic api` provides the API guidance if the current agent session cannot reload its tools. Direct HTTP MCP at @MIY_ORIGIN@/mcp uses separate OAuth; the generated workspace uses stdio.
+The first call reads local CLI guidance and works offline. The second verifies the installed bundle and reads the live platform. Report the project path, selected context and returned `platformBundleVersion` when it succeeds. If tools are unavailable, tell the user which folder to reopen and which call to make there. Use `miy describe --topic api` for offline help and leave the live MCP check pending until it succeeds. Direct HTTP MCP at @MIY_ORIGIN@/mcp uses its own OAuth session.
 
-## 4. Work within the app contract
+## 4. Implement and check the app
 
-Read the project's AGENTS.md or CLAUDE.md and follow its managed guidance. Give app APIs an OpenAPI contract and run the project's contract check. Use its own installation database and the platform SDK or approved APIs for cross-app access. Manifest permissions are requests. Registration, permission approval and deployment are separate operations; ask for them only when the requested work needs them.
+Read the generated AGENTS.md (Codex) or CLAUDE.md (Claude Code), the referenced project skills and docs/CLI-REFERENCE.md for the installed version. Inspect CLI inputs, permissions and effects with `miy describe --command "app build"`. Discover platform APIs with `search_api({"query":"KEYWORD"})` and then `get_api({"id":"OPERATION_ID"})` using an ID from the results. Use `list_components` and `get_component` to find shared UI components.
 
-For UI work, follow the navigation lifecycle in MCP `get_contract`. In preview, check that internal navigation and Back preserve the app layout and do not repeat session initialization.
+Implement business code in src/ and web/src/ and add new numbered SQL files under migrations/. Use the app's database, verified SDK identity and permitted platform APIs. Follow docs/API.md for app endpoints. After changing an app API, run `pnpm api:generate` and include the generated OpenAPI document and TypeScript types. Run `miy app fmt` and the full `miy app check`. The earlier harness-only check covers setup.
+
+## 5. Publish and verify the requested environment
+
+1. **Registration and preview.** For a new app that needs preview or delivery, submit `miy app register` once. Give the administrator the app ID and registration request ID for approval. Resume when the requester has dev access. Device sign-in, app registration, user access and release permission approval are separate decisions. Use `miy app dev` to exercise the workflow in the browser. Check that navigation and Back preserve the app layout. Stop the preview with `miy app dev-stop` before dev deployment.
+2. **Server build.** For updates, increment the manifest version and preserve applied migrations. Commit the checked source in the app repository and confirm a clean worktree. Run `miy app source-pin` to record the commit and archive hash, then `miy app build` for the server build receipt. On a lost response or pending asynchronous build, retain the build/request ID. Inspect `job get` or `job watch`; recover the receipt with `miy job resume BUILD_ID --environment dev`. Inspect `job logs` on build failure.
+3. **Dev delivery.** Review `miy app deploy --environment dev --dry-run`, then execute `miy app deploy --environment dev` for a requested deployment. Use `miy app status` to match the intended source commit and release and verify installation health. Open the dev app as an intended user and test its main workflow. If a requested capability is missing, compare release requests and approvals with `miy permissions get --installation INSTALLATION_ID --release RELEASE_ID` and report the specific approval needed.
+4. **Acceptance and production.** Follow docs/ACCEPTANCE.md and record observed dev results for the exact release with `miy app accept --input @acceptance.json`. Mark untested checks `not_run` with a reason. Only on the user's request to publish to production, with prod deploy permission, preview `miy --context CONTEXT --app APP_ID app promote --environment prod --release RELEASE_ID --dry-run`. Promote that same accepted release with `miy --context CONTEXT --app APP_ID --yes app promote --environment prod --release RELEASE_ID`. Verify the prod installation, release, health and requested workflow in its own portal.
+
+Report the environment, app ID, source commit, build/job and release IDs, verified app URL, and checks actually performed. For a pending approval, give the responsible person the concrete action and keep the ID needed to resume.
