@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "@tanstack/react-router";
 import { request } from "@miy/sdk";
-import { consoleReturnPath, surfaceUrl } from "../lib/paths";
+import { consoleReturnPath, previewReturnPath, surfaceUrl } from "../lib/paths";
 import { LoginRecovery } from "./LoginRecovery";
 import { useSurface } from "../data/session";
 
@@ -13,7 +13,7 @@ export function Login() {
   const [error, setError] = useState("");
   const returnTo = () => options.surface === "console"
     ? consoleReturnPath(`${window.location.pathname}${window.location.search}${window.location.hash}`, window.location.origin)
-    : null;
+    : options.surface === "dev_portal" ? previewReturnPath(window.location.pathname) : null;
   async function enter(account: string) {
     setBusy(account);
     setError("");
@@ -57,7 +57,7 @@ export function Login() {
         <a
           className={`login-primary ${options?.developmentLogin ? "oauth-link" : ""}`}
           onClick={() => {
-            if (options.surface !== "console") return;
+            if (options.surface === "portal") return;
             const target = returnTo();
             if (target) sessionStorage.setItem("miy.returnTo", target);
             else sessionStorage.removeItem("miy.returnTo");

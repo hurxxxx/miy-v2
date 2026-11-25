@@ -914,6 +914,7 @@ fn principal(user: String, purpose: &str, development: bool) -> ApiResult<Princi
     };
     Ok(Principal {
         browser_purpose: Some(browser_purpose),
+        preview_login: None,
         cli_session_id: None,
         delegation_id: None,
         id: user,

@@ -130,6 +130,8 @@ mod policy;
 mod preferences;
 mod preview;
 #[cfg(feature = "server")]
+mod preview_auth;
+#[cfg(feature = "server")]
 mod read_api;
 #[cfg(feature = "server")]
 mod registration;

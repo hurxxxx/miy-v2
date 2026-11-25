@@ -64,6 +64,7 @@ fn suite(name: &str, result: Result<Vec<String>>, evidence: Value) {
 fn actor(id: &str) -> auth::Principal {
     auth::Principal {
         browser_purpose: None,
+        preview_login: None,
         cli_session_id: None,
         delegation_id: None,
         id: id.into(),

@@ -1,4 +1,10 @@
 {
+  "previewLogin": {
+    "working": "Returning to local preview…",
+    "forbidden": "This account cannot open this app in dev.",
+    "expired": "The sign-in request expired. Open the local preview URL again.",
+    "failed": "Preview sign-in failed. Reopen the URL of the running local preview."
+  },
   "surfaces": {
     "portal": "Work portal",
     "dev_portal": "Test portal",

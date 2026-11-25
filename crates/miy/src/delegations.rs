@@ -138,6 +138,16 @@ pub async fn check(
     env: &str,
     action: Action,
 ) -> ApiResult<()> {
+    // The browser supplies the business identity. A delegated preview runner also
+    // bounds the platform data its local app can request for that identity.
+    if let Some(login) = p.preview_login {
+        let (owner, delegation): (String, Option<Uuid>) = sqlx::query_as(
+            "SELECT host_user,delegation FROM preview_browser_logins WHERE id=$1 AND grant_hash IS NOT NULL AND expires_at>now()",
+        ).bind(login).fetch_optional(&state.pool).await?.ok_or_else(ApiError::unauthorized)?;
+        if let Some(id) = delegation {
+            check_id(&state.pool, &owner, id, app, env, action).await?;
+        }
+    }
     if let Some(id) = p.delegation_id {
         check_id(&state.pool, &p.id, id, app, env, action).await?;
     }

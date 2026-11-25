@@ -131,7 +131,7 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
             axum::routing::any(crate::connections::connect),
         )
         .route(
-            "/preview/apps/{app}/context",
+            "/preview/apps/{app}/browser/context",
             axum::routing::get(crate::connections::preview_context)
                 .layer(middleware::map_response(no_store)),
         )
@@ -142,6 +142,26 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
         .route(
             "/preview/apps/{app}/connections/{target}/api/{*path}",
             axum::routing::any(crate::connections::preview_connect),
+        )
+        .route(
+            "/preview/apps/{app}/context",
+            axum::routing::get(|| async { ApiError::gone("preview_cli_upgrade_required") }),
+        )
+        .route(
+            "/preview/apps/{app}/browser/start",
+            axum::routing::post(crate::preview_auth::start),
+        )
+        .route(
+            "/preview/browser/{id}/authorize",
+            axum::routing::post(crate::preview_auth::authorize),
+        )
+        .route(
+            "/preview/apps/{app}/browser/exchange",
+            axum::routing::post(crate::preview_auth::exchange),
+        )
+        .route(
+            "/preview/apps/{app}/browser/viewer",
+            axum::routing::get(crate::preview_auth::viewer),
         )
         .route("/me", axum::routing::get(me))
         .route("/me/preferences", axum::routing::patch(update_preferences))
@@ -663,7 +683,32 @@ async fn session_guard(S(state): S<State>, mut request: Request, next: Next) -> 
         if request.headers().contains_key("origin") {
             return ApiError::forbidden().into_response();
         }
-        if token.starts_with(crate::app_calls::PREFIX) {
+        if token.starts_with(crate::preview_auth::PREFIX) {
+            let route = request
+                .extensions()
+                .get::<axum::extract::MatchedPath>()
+                .map(|p| p.as_str())
+                .unwrap_or("");
+            if !crate::preview_auth::data_route(route, request.method()) {
+                return ApiError::forbidden().into_response();
+            }
+            let path = request.uri().path();
+            let app = path
+                .strip_prefix("/api/v1")
+                .unwrap_or(path)
+                .strip_prefix("/preview/apps/")
+                .and_then(|tail| tail.split('/').next())
+                .unwrap_or("");
+            let Some(instance) = request
+                .headers()
+                .get("x-miy-preview-instance")
+                .and_then(|h| h.to_str().ok())
+                .and_then(|v| Uuid::parse_str(v).ok())
+            else {
+                return ApiError::forbidden().into_response();
+            };
+            crate::preview_auth::authenticate(&state, token, instance, app).await
+        } else if token.starts_with(crate::app_calls::PREFIX) {
             match crate::app_calls::authenticate(&state, token).await {
                 Ok((p, context)) => {
                     let path = request
@@ -769,7 +814,7 @@ fn audited_read_route(route: &str) -> bool {
         route.strip_prefix("/api/v1").unwrap_or(route),
         "/installations/{id}/platform/directory"
             | "/apps/{app}/releases/{release}/source"
-            | "/preview/apps/{app}/context"
+            | "/preview/apps/{app}/browser/context"
             | "/preview/apps/{app}/platform/directory"
             | "/installations/{id}/platform/files/by-request/{request}"
             | "/installations/{id}/platform/files/{file}"
@@ -811,7 +856,7 @@ fn delegated_route(route: &str, method: &axum::http::Method) -> bool {
             | "/apps/{app}/build-requests/{request}"
             | "/dev-sessions/{id}"
             | "/apps/{app}/dev-sessions/by-request/{request}"
-            | "/preview/apps/{app}/context"
+            | "/preview/apps/{app}/browser/context"
             | "/artifacts/{hash}/ui/{*path}",
         ) => true,
         (
@@ -826,6 +871,8 @@ fn delegated_route(route: &str, method: &axum::http::Method) -> bool {
             | "/dev-sessions/{id}/heartbeat"
             | "/apps/{app}/test-acceptance"
             | "/database/prepare"
+            | "/preview/apps/{app}/browser/start"
+            | "/preview/apps/{app}/browser/exchange"
             | "/cli/logout",
         ) => true,
         (&Method::DELETE, "/dev-sessions/{id}") => true,
@@ -875,7 +922,7 @@ async fn capabilities(S(s): S<State>) -> Json<Value> {
         "runtime.official-release.v1",
         "runtime.preflight.v2",
         "development.sessions.v1",
-        "preview.context.v1",
+        "preview.browser.v1",
         "auth.sessions.v1",
         "auth.device.v1",
         "runtime.jobs.v1",

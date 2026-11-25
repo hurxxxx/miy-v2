@@ -1,4 +1,5 @@
 //! Local preview uses a server development database by default. Platform credentials stay in this gateway.
+mod browser;
 use crate::development_client::{DatabaseMode, Remote};
 use crate::{
     api_error::{ApiError, ApiResult},
@@ -7,6 +8,7 @@ use crate::{
     contract, docker as runtime, identity as auth,
 };
 use anyhow::{Context, Result, ensure};
+use axum::Extension;
 use axum::{
     Json, Router,
     body::to_bytes,
@@ -15,6 +17,9 @@ use axum::{
     middleware::{self, Next},
     response::{IntoResponse, Redirect, Response},
 };
+use browser::{Browser, Sessions, VerifiedUser};
+#[cfg(feature = "server")]
+pub(crate) use browser::{challenge, valid_nonce};
 use serde_json::{Value, json};
 use sqlx::{Connection, Executor};
 use std::{
@@ -150,17 +155,15 @@ pub async fn stop() -> Result<()> {
 struct Preview {
     session: Session,
     manifest: contract::Manifest,
-    user: Value,
+    sessions: Arc<Sessions>,
     installation: Uuid,
     release: Uuid,
     port: i32,
     secret: String,
-    cookie: String,
-    csrf: String,
+
     origin: String,
     cookie_name: String,
     backend_origin: String,
-    backend_capability: String,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Shutdown {
@@ -290,7 +293,7 @@ pub(crate) async fn startup_installation(
     let context: crate::api_contract::PreviewContext = serde_json::from_value(
         app_cli::api(
             session,
-            &format!("/api/v1/preview/apps/{app}/context"),
+            &format!("/api/v1/preview/apps/{app}/browser/context"),
             None,
         )
         .await?,
@@ -409,7 +412,6 @@ async fn serve_preview(
         );
     }
     let backend_origin = format!("http://{}", backend_listener.local_addr()?);
-    let backend_capability = auth::random();
     let serving = async {
         let database_url = if let Some(ref remote) = remote {
             remote.database_url.clone()
@@ -423,7 +425,6 @@ async fn serve_preview(
                     &database_url,
                     installation,
                     &backend_origin,
-                    &backend_capability,
                 )
                 .await?,
             )
@@ -443,7 +444,7 @@ async fn serve_preview(
                 &image,
                 &database_url,
                 installation,
-                backend_reachable.then_some((backend_origin.as_str(), backend_capability.as_str())),
+                backend_reachable.then_some(backend_origin.as_str()),
             )
             .await
         };
@@ -463,20 +464,16 @@ async fn serve_preview(
         let state = Arc::new(Preview {
             session,
             manifest: m.clone(),
-            user,
+            sessions: Arc::default(),
             installation,
             release,
             port: backend_port,
             secret,
-            cookie: auth::random(),
-            csrf: auth::random(),
             origin: origin.clone(),
             cookie_name: format!("miy_preview_{port}"),
             backend_origin,
-            backend_capability,
         });
-        let url = format!("{origin}/?preview={}", state.cookie);
-        // Only the short-lived preview entry token appears locally; no platform credential does.
+        let url = format!("{origin}/");
         app_cli::save(
             ".miy/preview.json",
             &json!({"url":url,"appId":m.id,"port":port,"runtime":runtime,"backendPort":backend_port,"databaseId":remote.as_ref().map(|r|r.database_id)}),
@@ -485,46 +482,8 @@ async fn serve_preview(
             "{}",
             json!({"url":url,"appId":m.id,"runtime":runtime,"database":if remote.is_some() { "server-dev" } else { "local-only" },"platformEnvironment":"dev","databaseId":remote.as_ref().map(|r|r.database_id),"schemaFingerprint":remote.as_ref().map(|r|r.schema_fingerprint.as_str())})
         );
-        let app = Router::new()
-            .route("/__miy/context", axum::routing::get(context))
-            .route("/__miy/api/{*path}", axum::routing::any(backend))
-            .route("/__miy/files/{*path}", axum::routing::any(files))
-            .route("/__miy/platform/directory", axum::routing::get(directory))
-            .route("/__miy/live", axum::routing::get(preview_live))
-            .route(
-                "/__miy/connections/{target}/api/{*path}",
-                axum::routing::any(connection),
-            )
-            .fallback_service(
-                ServeDir::new("dist/preview").fallback(ServeFile::new("dist/preview/index.html")),
-            )
-            .layer(middleware::from_fn_with_state(state.clone(), guard))
-            .with_state(state.clone());
-        let backend_app = Router::new()
-            .route("/platform/directory", axum::routing::get(directory))
-            .route("/platform/files", axum::routing::any(platform_files_root))
-            .route(
-                "/platform/files/{*path}",
-                axum::routing::any(platform_files),
-            )
-            .route(
-                "/platform/notifications",
-                axum::routing::post(preview_notify),
-            )
-            .route(
-                "/platform/notifications/retract",
-                axum::routing::post(preview_retract),
-            )
-            .route(
-                "/platform/notifications/read",
-                axum::routing::post(preview_mark_read),
-            )
-            .route(
-                "/platform/notifications/by-request/{request}",
-                axum::routing::get(preview_notification_by_request),
-            )
-            .layer(middleware::from_fn_with_state(state.clone(), backend_guard))
-            .with_state(state);
+        let app = browser_router(state.clone(), std::path::Path::new("dist/preview"));
+        let backend_app = backend_router(state);
         let mut backend_shutdown = shutdown.clone();
         let backend_server = axum::serve(backend_listener, backend_app)
             .with_graceful_shutdown(async move {
@@ -568,6 +527,59 @@ async fn serve_preview(
         serving.await?;
     }
     Ok(())
+}
+
+fn backend_router(state: Arc<Preview>) -> Router {
+    let backend_routes = Router::new()
+        .route(
+            "/connections/{target}/api/{*path}",
+            axum::routing::any(connection),
+        )
+        .route("/platform/directory", axum::routing::get(directory))
+        .route("/platform/files", axum::routing::any(platform_files_root))
+        .route(
+            "/platform/files/{*path}",
+            axum::routing::any(platform_files),
+        )
+        .route(
+            "/platform/notifications",
+            axum::routing::post(preview_notify),
+        )
+        .route(
+            "/platform/notifications/retract",
+            axum::routing::post(preview_retract),
+        )
+        .route(
+            "/platform/notifications/read",
+            axum::routing::post(preview_mark_read),
+        )
+        .route(
+            "/platform/notifications/by-request/{request}",
+            axum::routing::get(preview_notification_by_request),
+        )
+        .layer(middleware::from_fn_with_state(state.clone(), backend_guard));
+    Router::new()
+        .nest(
+            &format!("/api/v1/installations/{}", state.installation),
+            backend_routes,
+        )
+        .with_state(state)
+}
+
+fn browser_router(state: Arc<Preview>, dist: &std::path::Path) -> Router {
+    Router::new()
+        .route("/__miy/context", axum::routing::get(context))
+        .route("/__miy/api/{*path}", axum::routing::any(backend))
+        .route("/__miy/files/{*path}", axum::routing::any(files))
+        .route("/__miy/platform/directory", axum::routing::get(directory))
+        .route("/__miy/live", axum::routing::get(preview_live))
+        .route(
+            "/__miy/connections/{target}/api/{*path}",
+            axum::routing::any(connection),
+        )
+        .fallback_service(ServeDir::new(dist).fallback(ServeFile::new(dist.join("index.html"))))
+        .layer(middleware::from_fn_with_state(state.clone(), guard))
+        .with_state(state)
 }
 
 async fn ensure_network(project: &str) -> Result<()> {
@@ -766,7 +778,7 @@ async fn start_app(
     image: &str,
     database_url: &str,
     installation: Uuid,
-    platform: Option<(&str, &str)>,
+    platform: Option<&str>,
 ) -> Result<(i32, String, Uuid, Uuid)> {
     let secret = auth::random();
     let release = Uuid::new_v4();
@@ -774,11 +786,7 @@ async fn start_app(
     // Without a reachable backend listener the SDK reports that platform calls
     // are unavailable instead of waiting on an address inside the container.
     let platform = platform
-        .map(|(origin, capability)| {
-            format!(
-                "MIY_PREVIEW_PLATFORM_ORIGIN={origin}\nMIY_PREVIEW_PLATFORM_CAPABILITY={capability}\n"
-            )
-        })
+        .map(|origin| format!("MIY_CORE_ORIGIN={origin}\nMIY_CORE_ALLOW_HTTP=1\n"))
         .unwrap_or_default();
     private_env(
         &env,
@@ -832,115 +840,70 @@ fn private_env(path: &std::path::Path, value: &str) -> Result<()> {
     crate::platform::write_private(path, value.as_bytes())
 }
 async fn guard(State(s): State<Arc<Preview>>, req: Request, next: Next) -> Response {
-    let expected = s.origin.strip_prefix("http://").unwrap();
-    if req.headers().get("host").and_then(|h| h.to_str().ok()) != Some(expected) {
-        return ApiError::forbidden().into_response();
-    }
-    if req.uri().path() == "/" && req.method() == axum::http::Method::GET {
-        let valid = req
-            .uri()
-            .query()
-            .map(|q| {
-                url::form_urlencoded::parse(q.as_bytes())
-                    .any(|(k, v)| k == "preview" && v == s.cookie)
-            })
-            .unwrap_or(false);
-        if valid {
-            let mut r = Redirect::to(&format!("/apps/{}", s.manifest.id)).into_response();
-            r.headers_mut().insert(
-                header::SET_COOKIE,
-                format!(
-                    "{}={}; HttpOnly; SameSite=Strict; Path=/",
-                    s.cookie_name, s.cookie
-                )
-                .parse()
-                .unwrap(),
-            );
-            r.headers_mut()
-                .insert(header::REFERRER_POLICY, "no-referrer".parse().unwrap());
-            return r;
-        }
-    }
-    if auth::cookie(req.headers(), &s.cookie_name).as_deref() != Some(&s.cookie) {
-        return ApiError::unauthorized().into_response();
-    }
-    if !matches!(
-        *req.method(),
-        axum::http::Method::GET | axum::http::Method::HEAD
-    ) && (req.headers().get("origin").and_then(|v| v.to_str().ok()) != Some(&s.origin)
-        || req
-            .headers()
-            .get("x-miy-csrf")
-            .and_then(|v| v.to_str().ok())
-            != Some(&s.csrf))
-    {
-        return ApiError::forbidden().into_response();
-    }
-    let mut response = next.run(req).await;
-    response
-        .headers_mut()
-        .insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
-    response
-}
-fn backend_authorized(s: &Preview, request: &Request) -> bool {
-    let expected_host = s.backend_origin.strip_prefix("http://").unwrap_or_default();
-    let capability = request
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .unwrap_or_default();
-    let equal_capability = capability.len() == s.backend_capability.len()
-        && capability
-            .bytes()
-            .zip(s.backend_capability.bytes())
-            .fold(0u8, |difference, (left, right)| difference | (left ^ right))
-            == 0;
-    !request.headers().contains_key(header::ORIGIN)
-        && !request.headers().contains_key(header::COOKIE)
-        && request
-            .headers()
-            .get(header::HOST)
-            .and_then(|h| h.to_str().ok())
-            == Some(expected_host)
-        && request
-            .headers()
-            .get("x-miy-preview-user")
-            .and_then(|h| h.to_str().ok())
-            == s.user["id"].as_str()
-        && request
-            .headers()
-            .get("x-miy-release")
-            .and_then(|h| h.to_str().ok())
-            == Some(s.release.to_string().as_str())
-        && equal_capability
-}
-
-async fn current_user(s: &Preview) -> ApiResult<Value> {
-    let user = app_cli::api(&s.session, "/api/v1/me", None)
+    browser::handle(s, req, next)
         .await
-        .map_err(|_| ApiError::unauthorized())?;
-    if user["id"].as_str().is_none() || user["id"] != s.user["id"] {
-        return Err(ApiError::unauthorized());
-    }
-    Ok(user)
+        .unwrap_or_else(IntoResponse::into_response)
 }
-
-async fn backend_guard(State(s): State<Arc<Preview>>, request: Request, next: Next) -> Response {
-    if !backend_authorized(&s, &request) {
+fn backend_actor(s: &Preview, req: &Request) -> Option<Browser> {
+    let headers = req.headers();
+    if headers.contains_key(header::ORIGIN)
+        || headers.contains_key(header::COOKIE)
+        || headers.get(header::HOST)?.to_str().ok()? != s.backend_origin.strip_prefix("http://")?
+        || headers.get("x-miy-release")?.to_str().ok()? != s.release.to_string()
+    {
+        return None;
+    }
+    s.sessions.backend(
+        headers
+            .get(header::AUTHORIZATION)?
+            .to_str()
+            .ok()?
+            .strip_prefix("Bearer ")?,
+    )
+}
+async fn backend_guard(State(s): State<Arc<Preview>>, mut req: Request, next: Next) -> Response {
+    let Some(actor) = backend_actor(&s, &req) else {
         return ApiError::forbidden().into_response();
+    };
+    if let Err(e) = actor.user(&s).await {
+        return e.into_response();
     }
-    if let Err(error) = current_user(&s).await {
-        return error.into_response();
-    }
-    let mut response = next.run(request).await;
+    req.extensions_mut().insert(actor);
+    let mut response = next.run(req).await;
     crate::file_transfer::secure_headers(response.headers_mut());
     response
 }
 
-async fn context(State(s): State<Arc<Preview>>) -> Json<Value> {
+async fn context(
+    State(s): State<Arc<Preview>>,
+    Extension(browser): Extension<Browser>,
+    Extension(user): Extension<VerifiedUser>,
+) -> Json<Value> {
     Json(
-        json!({"appId":s.manifest.id,"installationId":s.installation,"releaseId":s.release,"user":{"id":s.user["id"],"name":s.user["name"]},"csrf":s.csrf}),
+        json!({"appId":s.manifest.id,"installationId":s.installation,"releaseId":s.release,"user":user.0,"csrf":browser.csrf}),
+    )
+}
+
+fn signed(s: &Preview, browser: &Browser, user: &Value) -> ApiResult<String> {
+    auth::sign_identity(
+        user["id"].as_str().ok_or_else(ApiError::unauthorized)?,
+        false,
+        s.installation,
+        s.release,
+        &s.secret,
+        s.sessions.continuation(browser)?,
+    )
+}
+fn identity_for(s: &Preview, req: &Request) -> ApiResult<String> {
+    signed(
+        s,
+        req.extensions()
+            .get::<Browser>()
+            .ok_or_else(ApiError::unauthorized)?,
+        &req.extensions()
+            .get::<VerifiedUser>()
+            .ok_or_else(ApiError::unauthorized)?
+            .0,
     )
 }
 async fn directory(State(s): State<Arc<Preview>>, req: Request) -> ApiResult<Response> {
@@ -967,15 +930,7 @@ async fn backend(
     Path(path): Path<String>,
     req: Request,
 ) -> ApiResult<Response> {
-    // Revalidate the actual CLI user on each API request; expiration/revocation is effective locally too.
-    let user = current_user(&s).await?;
-    let token = auth::sign_identity(
-        user["id"].as_str().ok_or_else(ApiError::unauthorized)?,
-        user["admin"] == true,
-        s.installation,
-        s.release,
-        &s.secret,
-    )?;
+    let token = identity_for(&s, &req)?;
     forward(
         &s,
         &format!("http://127.0.0.1:{}/api/{path}", s.port),
@@ -984,12 +939,11 @@ async fn backend(
     )
     .await
 }
-/// Live connection of the preview (crate::live): the guard already checked the
-/// preview cookie and host; the page's Origin must be this preview. Relayed to
-/// the local backend's `/api/live` with the developer's identity, rechecking
-/// the CLI user like every other preview request.
+/// The same portal session is rechecked while this socket stays open.
 async fn preview_live(
     State(s): State<Arc<Preview>>,
+    Extension(browser): Extension<Browser>,
+    Extension(user): Extension<VerifiedUser>,
     headers: axum::http::HeaderMap,
     upgrade: axum::extract::ws::WebSocketUpgrade,
 ) -> Response {
@@ -1001,15 +955,7 @@ async fn preview_live(
         .max_frame_size(crate::live::MAX_MESSAGE_BYTES)
         .on_upgrade(move |mut socket| async move {
             use crate::live::{close, close_with};
-            let identity = match current_user(&s).await.and_then(|user| {
-                auth::sign_identity(
-                    user["id"].as_str().ok_or_else(ApiError::unauthorized)?,
-                    user["admin"] == true,
-                    s.installation,
-                    s.release,
-                    &s.secret,
-                )
-            }) {
+            let identity = match signed(&s, &browser, &user.0) {
                 Ok(token) => token,
                 Err(_) => {
                     close_with(&mut socket, close::SESSION_ENDED, "session_ended").await;
@@ -1045,8 +991,10 @@ async fn preview_live(
             let state = s.clone();
             crate::live::relay(socket, upstream, move || {
                 let state = state.clone();
+                let browser = browser.clone();
                 async move {
-                    current_user(&state)
+                    browser
+                        .user(&state)
                         .await
                         .map(|_| ())
                         .map_err(|_| crate::live::Ended::Session)
@@ -1063,14 +1011,7 @@ async fn files(
     Path(path): Path<String>,
     req: Request,
 ) -> ApiResult<Response> {
-    let user = current_user(&s).await?;
-    let token = auth::sign_identity(
-        user["id"].as_str().ok_or_else(ApiError::unauthorized)?,
-        user["admin"] == true,
-        s.installation,
-        s.release,
-        &s.secret,
-    )?;
+    let token = identity_for(&s, &req)?;
     let url = file_url(
         &format!("http://127.0.0.1:{}", s.port),
         &["api", "files"],
@@ -1261,10 +1202,11 @@ async fn file_forward(
     target = if let Some(token) = token {
         target.header("x-miy-identity", token)
     } else {
-        let session = crate::cli_login::refreshed(&s.session)
-            .await
-            .map_err(|_| ApiError::unauthorized())?;
-        crate::cli_client::authenticate(&session, target)
+        parts
+            .extensions
+            .get::<Browser>()
+            .ok_or_else(ApiError::unauthorized)?
+            .authenticate(s, target)
     };
     let upstream = target
         .send()
@@ -1325,10 +1267,21 @@ async fn forward(
     );
     let method = req.method().clone();
     let content_type = req.headers().get(header::CONTENT_TYPE).cloned();
+    let browser = req.extensions().get::<Browser>().cloned();
     let bytes = to_bytes(req.into_body(), 4 * 1024 * 1024)
         .await
         .map_err(|_| ApiError::bad("request_too_large"))?;
-    let client = crate::cli_client::client(s.session.ca_file.as_deref(), 20)?;
+    let client = if identity.is_some() {
+        reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .retry(reqwest::retry::never())
+            .timeout(std::time::Duration::from_secs(20))
+            .build()
+            .map_err(|_| ApiError::unavailable("preview_upstream_failed"))?
+    } else {
+        crate::cli_client::client(s.session.ca_file.as_deref(), 20)?
+    };
     let mut request = client.request(method, url).body(bytes);
     if let Some(ct) = content_type {
         request = request.header(header::CONTENT_TYPE, ct)
@@ -1336,10 +1289,9 @@ async fn forward(
     request = if let Some(token) = identity {
         request.header("x-miy-identity", token)
     } else {
-        let session = crate::cli_login::refreshed(&s.session)
-            .await
-            .map_err(|_| ApiError::unauthorized())?;
-        crate::cli_client::authenticate(&session, request)
+        browser
+            .ok_or_else(ApiError::unauthorized)?
+            .authenticate(s, request)
     };
     let response = request
         .send()
@@ -1352,17 +1304,80 @@ async fn forward(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::future::{pending, ready};
+
+    #[cfg(feature = "server")]
+    pub(crate) async fn browser_acceptance(
+        core: &crate::State,
+        cli: &Session,
+        manifest: &contract::Manifest,
+        installation: Uuid,
+    ) -> Result<()> {
+        let socket = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let gateway = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let private = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let origin = format!("http://{}", gateway.local_addr()?);
+        let mut s = test_preview();
+        s.session = cli.clone();
+        s.installation = installation;
+        s.manifest = manifest.clone();
+        s.manifest
+            .requested_permissions
+            .push("platform:directory:read".into());
+        s.port = i32::from(socket.local_addr()?.port());
+        s.origin = origin.clone();
+        s.backend_origin = format!("http://{}", private.local_addr()?);
+        let s = Arc::new(s);
+        let business=Router::new().route("/api/who",axum::routing::get(|State(s):State<Arc<Preview>>,headers:axum::http::HeaderMap| async move {
+            let mut validation=jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
+            validation.set_audience(&["miy-app"]);
+            validation.set_issuer(&["miy"]);
+            let token=headers["x-miy-identity"].to_str().unwrap();
+            let user=jsonwebtoken::decode::<Value>(token,&jsonwebtoken::DecodingKey::from_secret(s.secret.as_bytes()),&validation).unwrap().claims;
+            assert_eq!(user["installation_id"],s.installation.to_string());
+            let response=reqwest::Client::new().get(format!("{}/api/v1/installations/{}/platform/directory",s.backend_origin,s.installation))
+                .bearer_auth(user["delegation_token"].as_str().unwrap()).header("x-miy-release",user["release_id"].as_str().unwrap())
+                .send().await.unwrap();
+            assert!(response.status().is_success(),"backend directory {}",response.status());
+            let page:Value=response.json().await.unwrap();
+            Json(json!({"id":user["sub"],"admin":user["admin"],"directoryUser":page["subjectId"]}))
+        })).with_state(s.clone());
+        let dist = tempfile::tempdir()?;
+        std::fs::write(
+            dist.path().join("index.html"),
+            "<!doctype html><title>Local preview test</title>",
+        )?;
+        let browser = browser_router(s.clone(), dist.path());
+        let backend = backend_router(s.clone());
+        let servers = [
+            tokio::spawn(async move { axum::serve(socket, business).await }),
+            tokio::spawn(async move { axum::serve(private, backend).await }),
+            tokio::spawn(async move { axum::serve(gateway, browser).await }),
+        ];
+        let test = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../scripts/check-preview-browser.mjs");
+        let status = tokio::process::Command::new("node")
+            .arg(test)
+            .arg(origin)
+            .arg(&core.auth.dev_portal_origin)
+            .status()
+            .await?;
+        for server in servers {
+            server.abort();
+        }
+        ensure!(status.success(), "preview browser acceptance failed");
+        Ok(())
+    }
 
     fn test_preview() -> Preview {
         Preview {
             session: serde_json::from_value(json!({"origin":"http://127.0.0.1:1"})).unwrap(),
             manifest: serde_json::from_value(json!({"contractVersion":contract::VERSION,"id":"test-app","name":"test","version":"1.0.0","runtime":{"profile":"rust-web-v1"},"ui":{"delivery":"module","moduleEntry":"mf-manifest.json","moduleExport":"./AppRoot","contractVersion":"miy.ui/v1alpha1"},"resources":{"database":"postgresql"},"migrations":{"directory":"migrations"}})).unwrap(),
-            user:json!({"id":"original-user","name":"Test"}), installation:Uuid::new_v4(), release:Uuid::new_v4(), port:1,
-            secret:"unused".into(),cookie:"unused".into(),csrf:"unused".into(),origin:"http://127.0.0.1:2".into(),cookie_name:"preview-test".into(),
-            backend_origin:"http://127.0.0.1:3".into(),backend_capability:"test-process-only-capability-000000000001".into(),
+            sessions:Arc::default(), installation:Uuid::new_v4(), release:Uuid::new_v4(), port:1,
+            secret:"unused".into(),origin:"http://127.0.0.1:2".into(),cookie_name:"preview-test".into(),
+            backend_origin:"http://127.0.0.1:3".into(),
         }
     }
     #[tokio::test]
@@ -1370,6 +1385,7 @@ mod tests {
         let mut preview = test_preview();
         let request = || {
             Request::builder()
+                .extension(Browser::default())
                 .uri("/platform/directory?limit=1")
                 .body(axum::body::Body::empty())
                 .unwrap()
@@ -1401,44 +1417,33 @@ mod tests {
         server.abort();
     }
 
-    fn private_request(s: &Preview) -> Request {
-        Request::builder()
-            .uri("/platform/directory")
-            .header(header::HOST, "127.0.0.1:3")
-            .header(
-                header::AUTHORIZATION,
-                format!("Bearer {}", s.backend_capability),
-            )
-            .header("x-miy-preview-user", "original-user")
-            .header("x-miy-release", s.release.to_string())
-            .body(axum::body::Body::empty())
-            .unwrap()
-    }
     #[test]
-    fn preview_backend_requires_private_capability_fixed_actor_release_and_no_browser_origin() {
+    fn backend_proofs_are_bound_to_each_browser_and_release() {
         let s = test_preview();
-        assert!(backend_authorized(&s, &private_request(&s)));
+        let alice = Browser::fixture("alice");
+        let bob = Browser::fixture("bob");
+        let a = s.sessions.continuation(&alice).unwrap();
+        let b = s.sessions.continuation(&bob).unwrap();
+        let request = |proof: &str| {
+            Request::builder()
+                .header("host", "127.0.0.1:3")
+                .header("authorization", format!("Bearer {proof}"))
+                .header("x-miy-release", s.release.to_string())
+                .body(axum::body::Body::empty())
+                .unwrap()
+        };
+        assert_eq!(backend_actor(&s, &request(&a)).unwrap().csrf, "alice");
+        assert_eq!(backend_actor(&s, &request(&b)).unwrap().csrf, "bob");
+        assert!(backend_actor(&s, &request("alice")).is_none());
         for (header, value) in [
             ("origin", "null"),
-            ("cookie", "irrelevant=1"),
+            ("cookie", "a=b"),
             ("host", "127.0.0.1:4"),
-            ("authorization", "Bearer invalid"),
-            ("x-miy-preview-user", "other-user"),
-            ("x-miy-release", "00000000-0000-4000-8000-000000000001"),
+            ("x-miy-release", "wrong"),
         ] {
-            let mut req = private_request(&s);
+            let mut req = request(&a);
             req.headers_mut().insert(header, value.parse().unwrap());
-            assert!(!backend_authorized(&s, &req), "header {header}");
-        }
-        for header in [
-            "authorization",
-            "x-miy-preview-user",
-            "x-miy-release",
-            "host",
-        ] {
-            let mut req = private_request(&s);
-            req.headers_mut().remove(header);
-            assert!(!backend_authorized(&s, &req));
+            assert!(backend_actor(&s, &req).is_none());
         }
     }
     #[test]

@@ -13,6 +13,7 @@ fn principal(parent: Uuid) -> Principal {
     Principal {
         browser_purpose: None,
         id: "developer".into(),
+        preview_login: None,
         cli_session_id: Some(parent),
         delegation_id: None,
         scopes: vec!["miy.dev".into()],
@@ -153,6 +154,134 @@ async fn preview_client(s: &State, parent: Uuid) -> Result<crate::app_cli::Sessi
     )?)
 }
 
+/// Exercise the dev portal and CLI listeners over HTTP, with a separate browser
+/// cookie per actor. None of the session material is written to test output.
+struct BrowserGrant {
+    client: reqwest::Client,
+    grant: String,
+    instance: Uuid,
+    portal_cookie_hash: String,
+}
+impl BrowserGrant {
+    fn get(&self, url: String) -> reqwest::RequestBuilder {
+        self.client
+            .get(url)
+            .bearer_auth(&self.grant)
+            .header("x-miy-preview-instance", self.instance.to_string())
+    }
+}
+
+async fn login_browser(
+    s: &State,
+    cli: &crate::app_cli::Session,
+    app: &str,
+    actor: &str,
+    allowed: bool,
+) -> Result<Option<BrowserGrant>> {
+    let base = format!("/api/v1/preview/apps/{app}/browser");
+    let instance = Uuid::new_v4();
+    let verifier = auth::random();
+    let state = auth::random();
+    let login=crate::app_cli::api(cli,&format!("{base}/start"),Some(json!({
+        "instance":instance, "state":state, "port":23456,"challenge":crate::preview::challenge(&verifier)
+    }))).await?;
+    let id = login["authorizationUrl"]
+        .as_str()
+        .unwrap()
+        .rsplit('/')
+        .next()
+        .unwrap();
+    let client = reqwest::Client::new();
+    let session = auth::random();
+    let csrf = auth::random();
+    let digest = contract::hash(&session);
+    sqlx::query("INSERT INTO development_sessions(id_hash,user_id,csrf,expires_at,browser_purpose) VALUES($1,$2,$3,now()+interval '1 hour','dev_portal')")
+        .bind(&digest).bind(actor).bind(&csrf).execute(&s.pool).await?;
+    let dev = &s.auth.dev_portal_origin;
+    let approve = || {
+        client
+            .post(format!("{dev}/api/v1/preview/browser/{id}/authorize"))
+            .header("origin", dev)
+            .header("cookie", format!("miy_dev_portal_development={session}"))
+    };
+    anyhow::ensure!(approve().send().await?.status() == 403);
+    let approval = approve().header("x-miy-csrf", &csrf).send().await?;
+    if !allowed {
+        anyhow::ensure!(approval.status() == 403);
+        return Ok(None);
+    }
+    anyhow::ensure!(
+        approval.status() == 200,
+        "preview authorize {}",
+        approval.status()
+    );
+    let reply: Value = approval.json().await?;
+    anyhow::ensure!(reply["state"] == state && reply["port"] == 23456);
+    let request = json!({"instance":instance,"code":reply["code"],"verifier":verifier});
+    let exchange = |body: Value| {
+        client
+            .post(format!("{}{base}/exchange", cli.origin))
+            .bearer_auth(cli.token.as_ref().unwrap())
+            .json(&body)
+            .send()
+    };
+    let mut wrong = request.clone();
+    wrong["verifier"] = json!(auth::random());
+    anyhow::ensure!(exchange(wrong).await?.status() == 401);
+    let response = exchange(request.clone()).await?;
+    anyhow::ensure!(response.status() == 200);
+    let payload: Value = response.json().await?;
+    anyhow::ensure!(exchange(request).await?.status() == 401);
+    let grant = BrowserGrant {
+        client,
+        instance,
+        grant: payload["grant"].as_str().unwrap().into(),
+        portal_cookie_hash: digest,
+    };
+    anyhow::ensure!(
+        grant
+            .get(format!(
+                "{}/api/v1/preview/apps/unrelated/browser/viewer",
+                cli.origin
+            ))
+            .send()
+            .await?
+            .status()
+            == 401
+    );
+    let response = grant
+        .get(format!("{}{base}/viewer", cli.origin))
+        .send()
+        .await?;
+    anyhow::ensure!(
+        response.status() == 200,
+        "preview viewer {}",
+        response.status()
+    );
+    let viewer: Value = response.json().await?;
+    anyhow::ensure!(viewer["id"] == actor && viewer["admin"] == false);
+    anyhow::ensure!(
+        grant
+            .get(format!("{}/api/v1/me", cli.origin))
+            .send()
+            .await?
+            .status()
+            == 403
+    );
+    anyhow::ensure!(
+        grant
+            .client
+            .get(format!("{}{base}/viewer", cli.origin))
+            .bearer_auth(&grant.grant)
+            .header("x-miy-preview-instance", Uuid::new_v4().to_string())
+            .send()
+            .await?
+            .status()
+            == 401
+    );
+    Ok(Some(grant))
+}
+
 async fn fixture_auth() -> Result<(
     Arc<auth::Auth>,
     tokio::task::JoinHandle<std::io::Result<()>>,
@@ -287,13 +416,26 @@ async fn shared_development_database() -> Result<()> {
         .connect(&std::env::var("DATABASE_URL")?)
         .await?;
     backfill(&pool).await?;
-    let (auth, identity_task) = fixture_auth().await?;
+    let (mut auth, identity_task) = fixture_auth().await?;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let fixture = Arc::get_mut(&mut auth).unwrap();
+    fixture.dev_portal_origin = format!("http://{}", listener.local_addr()?);
+    fixture.development_login = true;
     let s = State {
         pool: pool.clone(),
         auth,
         artifacts: std::env::var("MIY_ARTIFACTS")?.into(),
     };
-    sqlx::query("INSERT INTO users(id,name) VALUES('developer','Developer'),('other','Other')")
+    let dev_router = crate::http::router_for(s.clone(), auth::BrowserPurpose::DevPortal);
+    let dev_router = if let Ok(path) = std::env::var("MIY_PREVIEW_TEST_WEB") {
+        dev_router.fallback_service(tower_http::services::ServeDir::new(&path).fallback(
+            tower_http::services::ServeFile::new(std::path::Path::new(&path).join("index.html")),
+        ))
+    } else {
+        dev_router
+    };
+    tokio::spawn(async move { axum::serve(listener, dev_router).await });
+    sqlx::query("INSERT INTO users(id,name) VALUES('developer','developer'),('other','alice')")
         .execute(&pool)
         .await?;
     sqlx::query("INSERT INTO apps VALUES('shared-dev-test','Shared development')")
@@ -309,6 +451,10 @@ async fn shared_development_database() -> Result<()> {
     let preview = preview_client(&s, parent).await?;
     let app = "shared-dev-test";
     let scope = crate::preview::startup_installation(&preview, app, "developer").await?;
+    let developer = login_browser(&s, &preview, app, "developer", true)
+        .await?
+        .unwrap();
+    login_browser(&s, &preview, app, "other", false).await?;
     let directory = format!("/api/v1/preview/apps/{app}/platform/directory");
     let denied = crate::app_cli::api(&preview, &directory, None)
         .await
@@ -567,17 +713,53 @@ async fn shared_development_database() -> Result<()> {
         installation == scope
             && crate::preview::startup_installation(&preview, app, "developer").await? == scope
     );
-    let denied = crate::app_cli::api(&preview, &directory, None)
-        .await
-        .unwrap_err();
-    anyhow::ensure!(crate::cli_error::classify(&denied).code == "installation_permission_denied");
+    let directory_url = format!("{}{directory}", preview.origin);
+    let denied = developer.get(directory_url.clone()).send().await?;
+    anyhow::ensure!(denied.status() == 403);
+    anyhow::ensure!(
+        denied.json::<Value>().await?["error"]["code"] == "installation_permission_denied"
+    );
     sqlx::query("INSERT INTO installation_permissions(installation_id,release_id,revision,permissions,approved_by) VALUES($1,$2,1,$3,'developer')")
         .bind(installation).bind(release).bind(json!(["platform:directory:read"])).execute(&pool).await?;
-    let directory_page = crate::app_cli::api(&preview, &directory, None).await?;
-    anyhow::ensure!(
-        directory_page["installationId"] == installation.to_string()
-            && directory_page["subjectId"] == "developer"
-    );
+    sqlx::query("INSERT INTO grants VALUES('other',$1,'dev','use')")
+        .bind(app)
+        .execute(&pool)
+        .await?;
+    let other = login_browser(&s, &preview, app, "other", true)
+        .await?
+        .unwrap();
+    for (viewer, subject) in [(&developer, "developer"), (&other, "other")] {
+        let response = viewer.get(directory_url.clone()).send().await?;
+        anyhow::ensure!(response.status() == 200, "directory {}", response.status());
+        let page: Value = response.json().await?;
+        anyhow::ensure!(
+            page["installationId"] == installation.to_string() && page["subjectId"] == subject
+        );
+    }
+    if std::env::var_os("MIY_PREVIEW_TEST_WEB").is_some() {
+        crate::preview::tests::browser_acceptance(
+            &s,
+            &preview,
+            &request("test", &[FIRST]).manifest,
+            installation,
+        )
+        .await?;
+    }
+    let expired = login_browser(&s, &preview, app, "other", true)
+        .await?
+        .unwrap();
+    sqlx::query("UPDATE preview_browser_logins SET expires_at=now()-interval '1 second' WHERE grant_hash=$1").bind(contract::hash(&expired.grant)).execute(&pool).await?;
+    anyhow::ensure!(expired.get(directory_url.clone()).send().await?.status() == 401);
+    sqlx::query("DELETE FROM grants WHERE user_id='other' AND app_id=$1")
+        .bind(app)
+        .execute(&pool)
+        .await?;
+    anyhow::ensure!(other.get(directory_url.clone()).send().await?.status() == 403);
+    sqlx::query("DELETE FROM development_sessions WHERE id_hash=$1")
+        .bind(&developer.portal_cookie_hash)
+        .execute(&pool)
+        .await?;
+    anyhow::ensure!(developer.get(directory_url).send().await?.status() == 401);
     passed(
         "first dev install uses the preview data scope and its directory still requires release approval",
     );

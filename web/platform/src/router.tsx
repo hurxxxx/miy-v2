@@ -72,6 +72,7 @@ export const router = createRouter({
     page("/settings/$section", SettingsPage),
     page("/search", SearchRoute),
     // The end of a user switch; the shell renders it before any session check.
+    page("/preview/login/$id", () => null),
     page("/switch-user", () => null),
     // Public account-link pages; the shell renders them before any session check.
     page("/signup", () => null),

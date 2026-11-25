@@ -19,6 +19,7 @@ use url::Url;
 #[derive(Clone, Debug)]
 pub struct Principal {
     pub browser_purpose: Option<BrowserPurpose>,
+    pub preview_login: Option<uuid::Uuid>,
     pub cli_session_id: Option<uuid::Uuid>,
     pub delegation_id: Option<uuid::Uuid>,
     pub id: String,
@@ -333,6 +334,7 @@ impl Auth {
         }
         Ok(Principal {
             browser_purpose: None,
+            preview_login: None,
             cli_session_id: None,
             delegation_id: None,
             id: c.sub,
@@ -477,14 +479,36 @@ impl Auth {
         if self.development_login
             && let Some(session) = cookie(headers, &self.cookie_name(purpose, "development"))
         {
+            return self
+                .session_by_hash(state, purpose, &hash(session), true)
+                .await;
+        }
+        let session = cookie(headers, &self.cookie_name(purpose, "session"))
+            .ok_or_else(ApiError::unauthorized)?;
+        self.session_by_hash(state, purpose, &hash(session), false)
+            .await
+    }
+
+    pub(crate) async fn session_by_hash(
+        &self,
+        state: &State,
+        purpose: BrowserPurpose,
+        session_hash: &str,
+        development: bool,
+    ) -> ApiResult<Principal> {
+        if development {
+            if !self.development_login {
+                return Err(ApiError::unauthorized());
+            }
             let row = sqlx::query("SELECT user_id,csrf FROM development_sessions WHERE id_hash=$1 AND expires_at>now() AND browser_purpose=$2")
-                .bind(hash(&session)).bind(purpose.as_str()).fetch_optional(&state.pool).await?.ok_or_else(ApiError::unauthorized)?;
+                .bind(session_hash).bind(purpose.as_str()).fetch_optional(&state.pool).await?.ok_or_else(ApiError::unauthorized)?;
             sqlx::query(&format!("UPDATE development_sessions SET last_seen_at=now() WHERE id_hash=$1 AND {SEEN_STALE}"))
-                .bind(hash(&session))
+                .bind(session_hash)
                 .execute(&state.pool)
                 .await?;
             return Ok(Principal {
                 browser_purpose: Some(purpose),
+                preview_login: None,
                 cli_session_id: None,
                 delegation_id: None,
                 id: row.get("user_id"),
@@ -493,12 +517,10 @@ impl Auth {
                 development: true,
             });
         }
-        let session = cookie(headers, &self.cookie_name(purpose, "session"))
-            .ok_or_else(ApiError::unauthorized)?;
         let (owner, issuer): (String, Option<String>) = sqlx::query_as(
             "SELECT user_id,impersonator_user_id FROM sessions WHERE id_hash=$1 AND browser_purpose=$2",
         )
-        .bind(hash(&session))
+        .bind(session_hash)
         .bind(purpose.as_str())
         .fetch_optional(&state.pool)
         .await?
@@ -521,7 +543,7 @@ impl Auth {
             return Err(ApiError::unauthorized());
         }
         let row=sqlx::query("SELECT * FROM sessions WHERE id_hash=$1 AND browser_purpose=$2 AND created_at>now()-interval '8 hours' FOR UPDATE")
-            .bind(hash(&session)).bind(purpose.as_str()).fetch_optional(&mut *tx).await?.ok_or_else(ApiError::unauthorized)?;
+            .bind(session_hash).bind(purpose.as_str()).fetch_optional(&mut *tx).await?.ok_or_else(ApiError::unauthorized)?;
         let id: String = row.get("user_id");
         // A switched session holds no identity provider tokens. Both users
         // were checked and locked before the session row above.
@@ -534,7 +556,7 @@ impl Auth {
                     .exchange(&[("grant_type", "refresh_token"), ("refresh_token", &refresh)])
                     .await?;
                 sqlx::query("UPDATE sessions SET access_token=$2,refresh_token=$3,expires_at=$4 WHERE id_hash=$1")
-                    .bind(hash(&session)).bind(encrypt(&t.access_token)?).bind(encrypt(t.refresh_token.as_deref().unwrap_or(&refresh))?)
+                    .bind(session_hash).bind(encrypt(&t.access_token)?).bind(encrypt(t.refresh_token.as_deref().unwrap_or(&refresh))?)
                     .bind(Utc::now()+Duration::seconds(t.expires_in)).execute(&mut *tx).await?;
                 access = t.access_token;
             }
@@ -546,12 +568,13 @@ impl Auth {
         sqlx::query(&format!(
             "UPDATE sessions SET last_seen_at=now() WHERE id_hash=$1 AND {SEEN_STALE}"
         ))
-        .bind(hash(&session))
+        .bind(session_hash)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
         Ok(Principal {
             browser_purpose: Some(purpose),
+            preview_login: None,
             cli_session_id: None,
             delegation_id: None,
             id,

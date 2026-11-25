@@ -332,14 +332,20 @@ impl Harness<'_> {
         source: &App,
         target: &App,
     ) -> Result<tokio::net::TcpStream> {
-        self.pending_body(actor, source.release, &source.connection(target))
-            .await
+        self.pending_body(
+            &actor.token,
+            source.release,
+            &source.connection(target),
+            None,
+        )
+        .await
     }
     async fn pending_body(
         &self,
-        actor: &Actor,
+        token: &str,
         release: Uuid,
         path: &str,
+        instance: Option<Uuid>,
     ) -> Result<tokio::net::TcpStream> {
         let base = url::Url::parse(self.base)?;
         ensure!(
@@ -351,9 +357,12 @@ impl Harness<'_> {
         // Hyper emits 100 Continue when the handler first polls the body. This
         // barrier establishes an actual in-flight body read without a sleep or
         // exposing the credential in subprocess arguments, logs, or evidence.
+        let extra = instance
+            .map(|id| format!("X-Miy-Preview-Instance: {id}\r\n"))
+            .unwrap_or_default();
         let request = format!(
-            "POST {} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {}\r\nX-Miy-Release: {}\r\nContent-Type: application/json\r\nContent-Length: 2\r\nExpect: 100-continue\r\nConnection: close\r\n\r\n",
-            path, actor.token, release
+            "POST {} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {}\r\nX-Miy-Release: {}\r\n{extra}Content-Type: application/json\r\nContent-Length: 2\r\nExpect: 100-continue\r\nConnection: close\r\n\r\n",
+            path, token, release
         );
         stream.write_all(request.as_bytes()).await?;
         let mut interim = Vec::new();
@@ -734,8 +743,27 @@ pub async fn run(
     );
     sqlx::query("INSERT INTO grants(user_id,app_id,environment,permission) VALUES($1,$2,'dev','develop') ON CONFLICT DO NOTHING")
         .bind(&user.id).bind(&a.app).execute(&state.pool).await?;
-    let preview = response(
+    denied(
         h.request(&user.token, Method::POST, &preview_path)
+            .json(&json!({}))
+            .send()
+            .await?,
+    )
+    .await?;
+    let instance = Uuid::new_v4();
+    let proof = format!(
+        "{}{}",
+        crate::preview_auth::PREFIX,
+        crate::identity::random()
+    );
+    let parent = hash(crate::identity::random());
+    sqlx::query("INSERT INTO development_sessions(id_hash,user_id,csrf,expires_at,browser_purpose) VALUES($1,$2,$3,now()+interval '5 minutes','dev_portal')")
+        .bind(&parent).bind(&user.id).bind(crate::identity::random()).execute(&state.pool).await?;
+    sqlx::query("INSERT INTO preview_browser_logins(app_id,instance_id,host_user,cli_session,port,state,challenge,grant_hash,session_hash,development) VALUES($1,$2,$3,$4,23456,'fixture','fixture',$5,$6,true)")
+        .bind(&a.app).bind(instance).bind(&user.id).bind(user.session).bind(hash(&proof)).bind(&parent).execute(&state.pool).await?;
+    let preview = response(
+        h.request(&proof, Method::POST, &preview_path)
+            .header("x-miy-preview-instance", instance.to_string())
             .json(&json!({}))
             .send()
             .await?,
@@ -748,7 +776,9 @@ pub async fn run(
     );
     for boundary in ["development grant", "installation approval", "CLI session"] {
         let before = b.calls();
-        let mut pending = h.pending_body(&user, a.release, &preview_path).await?;
+        let mut pending = h
+            .pending_body(&proof, a.release, &preview_path, Some(instance))
+            .await?;
         if boundary == "development grant" {
             sqlx::query("DELETE FROM grants WHERE user_id=$1 AND app_id=$2 AND environment='dev' AND permission='develop'")
                 .bind(&user.id).bind(&a.app).execute(&state.pool).await?;

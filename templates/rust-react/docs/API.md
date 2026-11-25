@@ -9,3 +9,9 @@ New apps can follow `GET /ping` in `src/api.rs` and `web/src/api.ts`. Existing a
 1. Install dependencies with `pnpm install --frozen-lockfile`.
 2. Run `pnpm api:generate` and commit `docs/openapi.json` and `web/src/api.generated.ts` with the handler and tests.
 3. Run `miy app check`. The quick `--harness-only` check validates file structure. Full checks and server builds compare the generated files when `apiContract` is `openapi-v1`.
+
+## Local preview authentication
+
+Run `miy app dev` and open the loopback URL. The CLI authorizes the dev runner and database. The app receives the identity of the person signed in through the dev portal in that browser. The same SDK handlers run locally and in deployed frames. Keep business rules on the backend and use the verified Identity on each request. The gateway routes backend platform calls using a short-lived proof for that browser user.
+
+For a two-person approval flow, open the same URL in two separate browser profiles. Give both accounts dev app access and sign in as the requester in one and the approver in the other. Before the first dev deployment, each tester needs develop access. User search and files also need the current dev release's approved permissions. Signing out in the dev portal ends that profile's preview authorization.

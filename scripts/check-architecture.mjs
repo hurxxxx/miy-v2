@@ -517,6 +517,7 @@ try {
       const errors = [];
       localPage.on("pageerror", (e) => errors.push(e.message));
       await localPage.goto(local.url);
+      await localPage.getByRole("button", { name: /개발자/ }).click();
       await localPage
         .getByRole("heading", { name: "Architecture probe" })
         .waitFor();

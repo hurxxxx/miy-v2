@@ -44,7 +44,7 @@ TRANSACTIONS = {
     ("auth.rs", "callback"): "identity",
     ("user_switch.rs", "exchange"): "user-switch",
     ("auth.rs", "development_session"): "identity",
-    ("auth.rs", "session"): "identity",
+    ("auth.rs", "session_by_hash"): "identity",
     ("auth_sessions.rs", "approve"): "identity",
     ("auth_sessions.rs", "exchange_device"): "identity",
     ("auth_sessions.rs", "limits"): "identity",
@@ -71,7 +71,10 @@ TRANSACTIONS = {
     ("policy.rs", "begin"): "write-type",
 }
 WRITERS = {
-    ("auth.rs", "session"): "identity",
+    ("preview_auth.rs", "start"): "identity",
+    ("preview_auth.rs", "authorize"): "identity",
+    ("preview_auth.rs", "exchange"): "identity",
+    ("auth.rs", "session_by_hash"): "identity",
     ("auth_sessions.rs", "approve"): "identity",
     ("auth_sessions.rs", "revoke_session"): "own",
     ("cli_auth.rs", "revoke_legacy"): "own",

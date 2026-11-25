@@ -151,6 +151,7 @@ pub(crate) fn sign_identity(
     installation: Uuid,
     release: Uuid,
     secret: &str,
+    continuation: String,
 ) -> ApiResult<String> {
     sign_identity_context(
         user,
@@ -162,7 +163,7 @@ pub(crate) fn sign_identity(
             environment: "dev".into(),
             callers: vec![],
             effective_permissions: vec![],
-            delegation_token: None,
+            delegation_token: Some(continuation),
             platform: false,
             groups: None,
         },

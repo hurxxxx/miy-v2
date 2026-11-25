@@ -605,10 +605,13 @@ async function developmentFlow(settings) {
   }, 1800000);
   const entry = new URL(previewInfo.url);
   requireThat(previewInfo.appId === state.appId && entry.protocol === "http:" && entry.hostname === "127.0.0.1", "local_preview_target_mismatch");
-  const local = await browser.newContext();
-  contexts.push(local); local.setDefaultTimeout(45000);
+  const local = users.developer.context;
   const page = await local.newPage();
   await page.goto(previewInfo.url);
+  const signIn = page.locator('a[href$="/auth/login"]');
+  const heading = page.getByRole("heading", { name: "Core flow acceptance", exact: true });
+  await signIn.or(heading).first().waitFor();
+  if (await signIn.isVisible()) await signIn.click();
   await page.getByRole("heading", { name: "Core flow acceptance", exact: true }).waitFor();
   const localContextResponse = await local.request.get(entry.origin + "/__miy/context");
   requireThat(localContextResponse.status() === 200, "local_context_unavailable");

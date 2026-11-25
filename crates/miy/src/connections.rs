@@ -89,15 +89,14 @@ pub async fn connect(
     }
     forward(&s, &p, &target, &inst, &permission, &path, &mut req).await
 }
-// Preview remains developer-only, additionally using explicit dev installation
-// approvals. A local manifest cannot elevate the installed app's permissions.
+// Preview uses the browser subject and the current dev installation approvals.
 pub async fn preview_connect(
     S(s): S<State>,
     axum::Extension(p): axum::Extension<Principal>,
     Path((app, target, path)): Path<(String, String, String)>,
     mut req: Request,
 ) -> ApiResult<Response> {
-    require_preview(&s, &p, &app).await?;
+    crate::preview_auth::recheck(&s, &p, &app).await?;
     let id = dev_installation(&s, &app).await?;
     let access = if matches!(
         *req.method(),
@@ -109,7 +108,7 @@ pub async fn preview_connect(
     };
     let permission = format!("app:{target}:{access}");
     let inst = source(&s, &p, id, &permission).await?;
-    // Local-preview code is not the installed release. Preserve its developer
+    // Local-preview code is not the installed release. Preserve its viewer
     // context but do not issue a backend continuation proof for that assertion.
     req.extensions_mut().insert(PreviewCall {
         app_id: app,
@@ -124,7 +123,7 @@ pub async fn preview_context(
     axum::Extension(p): axum::Extension<Principal>,
     Path(app): Path<String>,
 ) -> ApiResult<Json<crate::api_contract::PreviewContext>> {
-    require_preview(&s, &p, &app).await?;
+    require_host(&s, &p, &app).await?;
     let installation_id = sqlx::query_scalar(
         "SELECT COALESCE(i.id,a.initial_dev_installation_id) FROM apps a
          LEFT JOIN installations i ON i.app_id=a.id AND i.environment='dev' WHERE a.id=$1",
@@ -147,7 +146,7 @@ pub async fn preview_directory(
     Path(app): Path<String>,
     req: Request,
 ) -> ApiResult<Json<crate::api_contract::DirectoryPage>> {
-    require_preview(&s, &p, &app).await?;
+    crate::preview_auth::recheck(&s, &p, &app).await?;
     let id = dev_installation(&s, &app).await?;
     let inst = source(&s, &p, id, "platform:directory:read").await?;
     let query = crate::directory::DirectoryQuery::from_uri(req.uri())?;
@@ -160,7 +159,7 @@ pub async fn preview_directory(
         query,
     )
     .await?;
-    require_preview(&s, &p, &app).await?;
+    crate::preview_auth::recheck(&s, &p, &app).await?;
     let current = source(&s, &p, id, "platform:directory:read").await?;
     if current.get::<Uuid, _>("release_id") != inst.get::<Uuid, _>("release_id") {
         return Err(ApiError::conflict("release_changed_reload_required"));
@@ -224,7 +223,7 @@ pub struct PreviewCall {
 }
 /// The local preview carries a CLI or scoped delegation credential. Recheck the
 /// actual credential after body reads, not just the user's still-existing grants.
-pub(crate) async fn require_preview(s: &State, p: &Principal, app: &str) -> ApiResult<()> {
+pub(crate) async fn require_host(s: &State, p: &Principal, app: &str) -> ApiResult<()> {
     if p.browser_purpose.is_some() {
         return Err(ApiError::forbidden());
     }
@@ -248,7 +247,7 @@ pub(crate) async fn require_preview(s: &State, p: &Principal, app: &str) -> ApiR
 }
 
 pub async fn recheck_preview(s: &State, p: &Principal, call: &PreviewCall) -> ApiResult<()> {
-    require_preview(s, p, &call.app_id).await?;
+    crate::preview_auth::recheck(s, p, &call.app_id).await?;
     let inst = source(s, p, call.installation_id, &call.permission).await?;
     if inst.get::<Uuid, _>("release_id") != call.release_id
         || inst.get::<String, _>("environment") != "dev"

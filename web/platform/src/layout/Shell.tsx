@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { InstallationsProvider, installationsIn, useInstallations } from "../data/installations";
 import { useSession, useSurface, type Preferences, type User } from "../data/session";
-import { consoleReturnPath, currentEnvironment, environmentOrigin, environmentPath, isAccountLinkPath, isAdminPath, isCliApprovalPath, isConsolePath, isAppPath, pathEnvironment, portalEnvironment, surfaceUrl, type Environment } from "../lib/paths";
+import { consoleReturnPath, previewReturnPath, currentEnvironment, environmentOrigin, environmentPath, isAccountLinkPath, isAdminPath, isCliApprovalPath, isConsolePath, isAppPath, pathEnvironment, portalEnvironment, surfaceUrl, type Environment } from "../lib/paths";
 import { signOut } from "../lib/sign-out";
 import { LoadError } from "../components/LoadState";
 import { NewTabLink } from "../components/NewTabLink";
@@ -14,6 +14,7 @@ import { PanelMenu } from "../components/panels/PanelMenu";
 import { PANEL_MEDIA, SidePanel, panelKey, type OpenPanel } from "../components/panels/SidePanel";
 import { leaveMessage, type FrameInput } from "../app/AppFrame";
 import { request } from "@miy/sdk";
+import { PreviewLogin } from "../pages/PreviewLogin";
 import { Login } from "../pages/Login";
 import { Signup } from "../pages/Signup";
 import { CliInstall } from "../pages/CliInstall";
@@ -34,8 +35,10 @@ export function Shell() {
   const { state, options, retry } = useSession();
   const location = useLocation();
   useEffect(() => {
-    if (state.status === "ready" && options?.surface === "console" && location.pathname === "/") {
-      const target = consoleReturnPath(sessionStorage.getItem("miy.returnTo"), window.location.origin);
+    if (state.status === "ready" && options && location.pathname === "/") {
+      const saved = sessionStorage.getItem("miy.returnTo");
+      const target = options.surface === "console" ? consoleReturnPath(saved, window.location.origin)
+        : options.surface === "dev_portal" ? previewReturnPath(saved) : null;
       sessionStorage.removeItem("miy.returnTo");
       if (target) window.location.replace(target);
     }
@@ -98,6 +101,8 @@ export function Shell() {
       </main>
     );
   if (state.status === "anonymous") return <Login />;
+  const preview = previewReturnPath(location.pathname);
+  if (preview && options?.surface === "dev_portal") return <PreviewLogin key={preview + state.user.csrf} id={preview.split("/")[3]} csrf={state.user.csrf} />;
   const environment = currentEnvironment(location.pathname, ownEnvironment ?? "dev");
   if (environment === "invalid")
     return (

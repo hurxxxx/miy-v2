@@ -83,6 +83,7 @@ pub async fn principal(s: &State, token: &str) -> ApiResult<Principal> {
     crate::auth_sessions::ensure_active(&s.pool, &user).await?;
     Ok(Principal {
         browser_purpose: None,
+        preview_login: None,
         cli_session_id: None,
         delegation_id: None,
         id: user,

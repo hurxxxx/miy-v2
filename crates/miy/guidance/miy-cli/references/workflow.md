@@ -166,14 +166,17 @@ project; it does not invent a localhost address. Register/select the intended
 server before remote work. Registration and administrator approval are required
 before local preview can use an app's development permissions.
 
-With a matching 0.20.1 CLI and core, start local preview before the first dev
-deployment. A startup 403 on `/preview/apps/{app}/context` means to check the
+With a matching 0.21.0 CLI and core, start local preview before the first dev
+deployment. A startup 403 on `/preview/apps/{app}/browser/context` means to check the
 selected CLI identity, target app and dev grant. Directory access for an app
 feature requires the installed dev release to request and receive
 `platform:directory:read`. Request that permission only for a feature that uses
-the directory. With CLI 0.20.0, a startup 403 on `/platform/directory` is a known
-limitation. Record the request ID and continue to dev publication only when the
-user requested it.
+the directory. The browser opens the ordinary dev portal sign-in and returns to loopback.
+An existing dev session skips sign-in. The SDK Identity belongs to that browser.
+Use separate browser profiles for multi-user checks. Before the first dev
+installation the browser user needs develop access, and afterwards normal dev
+app access applies. Directory and storage still require release approval.
+Refresh the global CLI and run `miy app setup` in existing compatible projects.
 
 `app dev` builds the working tree and opens a single local development session for
 the app. The server prepares its development DB and applies the validated SQL;

@@ -61,7 +61,8 @@ try{
  writeFileSync(join(app,'web/src/AppRoot.tsx'),`import {useState,useEffect} from 'react';import type {AppProps} from '@miy/sdk';
 export default function AppRoot({runtime}:AppProps){const [draft,setDraft]=useState('');useEffect(()=>runtime.registerNavigationGuard(()=>draft?'Discard unsaved probe?':undefined),[runtime.registerNavigationGuard,draft]);useEffect(()=>setDraft(''),[runtime.location.pathname]);return <section><h1>Operations probe</h1><p data-testid="path">{runtime.location.pathname}</p><input data-testid="draft" value={draft} onChange={e=>setDraft(e.target.value)}/><button onClick={()=>runtime.navigate('/next')}>Next</button><button onClick={()=>runtime.navigate('/')}>Home</button><button onClick={()=>setDraft('')}>Save</button></section>;}`);
  let info=await startPreview();
- local=await chromium.launch({channel:'chrome',headless:true});const ctx=await local.newContext(),page=await ctx.newPage();await page.goto(info.url);await page.getByTestId('draft').waitFor();await guards(page,`http://127.0.0.1:18123/apps/${appId}`);
+ local=await chromium.launch({channel:'chrome',headless:true});const ctx=await local.newContext(),page=await ctx.newPage();await page.goto(info.url);
+      await page.getByRole("button", { name: /개발자/ }).click();await page.getByTestId('draft').waitFor();await guards(page,`http://127.0.0.1:18123/apps/${appId}`);
  fails(['dev','--database','local','--port','18124','--no-open'],CLI_EXIT.conflict,/preview_already_running/);
  const project='miy-preview-'+createHash('sha256').update(app).digest('hex').slice(0,16);
  // Test retention using only this synthetic local DB, not any user's app data.

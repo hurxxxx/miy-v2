@@ -844,6 +844,7 @@ async fn runtime_job_boundaries(state: &State, h: &Harness<'_>) -> Result<Vec<St
         let mut principal = auth::Principal {
             browser_purpose: None,
             id: viewer.user.clone(),
+            preview_login: None,
             cli_session_id: Some(viewer.parent),
             delegation_id: None,
             scopes: vec!["miy.read".into()],

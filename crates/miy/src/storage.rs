@@ -62,14 +62,13 @@ async fn access(
     };
     let installation = crate::domain::installation(s, p, id).await?;
     if let Some(preview) = extensions.get::<PreviewStorage>() {
-        if p.browser_purpose.is_some()
-            || preview.installation != id
+        if preview.installation != id
             || installation.get::<&str, _>("environment") != "dev"
             || installation.get::<Uuid, _>("release_id") != preview.release
         {
             return Err(ApiError::forbidden());
         }
-        crate::connections::require_preview(s, p, &preview.app).await?;
+        crate::preview_auth::recheck(s, p, &preview.app).await?;
     } else {
         let context = extensions
             .get::<crate::app_calls::Context>()
@@ -1700,7 +1699,7 @@ pub fn secure_headers(headers: &mut HeaderMap) {
     crate::file_transfer::secure_headers(headers);
 }
 
-/// Trusted extension constructed only by the developer-only preview endpoint.
+/// Trusted extension constructed only by the scoped preview endpoint.
 #[derive(Clone)]
 struct PreviewStorage {
     app: String,
@@ -1714,10 +1713,7 @@ async fn prepare_preview(
     app: &str,
     request: &mut Request,
 ) -> ApiResult<Uuid> {
-    if p.browser_purpose.is_some() {
-        return Err(ApiError::forbidden());
-    }
-    crate::connections::require_preview(s, p, app).await?;
+    crate::preview_auth::recheck(s, p, app).await?;
     let row = sqlx::query(
         "SELECT id,release_id FROM installations WHERE app_id=$1 AND environment='dev'",
     )
@@ -1913,11 +1909,11 @@ pub fn catalog() -> Vec<serde_json::Value> {
         serde_json::json!({"id":"file_cancel","method":"DELETE","path":"/api/v1/installations/{id}/platform/files/{file}","permission":"owning app continuation, current use and platform:files:write approval","description":"Explicitly cancel an unattached file only after the app confirms no reference; attached files are preserved and are released with detach"}),
         serde_json::json!({"id":"app_file_read","method":"GET","path":"/api/v1/installations/{id}/files/{path}","permission":"current use and AppRead delegation; owning app ACL","description":"Bounded streaming gateway to the owning app /api/files/{path}; browser clients use the app frame /_miy/files path","binary":true}),
         serde_json::json!({"id":"app_file_write","method":"POST","path":"/api/v1/installations/{id}/files/{path}","permission":"current use and AppWrite delegation, current release; owning app ACL","description":"File mutation through the owning app, separate from the 4 MiB JSON gateway","binary":true}),
-        serde_json::json!({"id":"preview_file_reserve","method":"POST","path":"/api/v1/preview/apps/{app}/platform/files","permission":"CLI DevSession on app/dev, current use and platform:files:write approval","description":"Native local backend capability proxy only; never browser credentials or production installations","input":schemars::schema_for!(crate::storage_contract::ReserveFile)}),
-        serde_json::json!({"id":"preview_file_read","method":"GET","path":"/api/v1/preview/apps/{app}/platform/files/{path}","permission":"CLI DevSession on app/dev, current use and platform:files:read approval","description":"Same Storage metadata/stream contract scoped to the current dev installation"}),
-        serde_json::json!({"id":"preview_file_upload","method":"PUT","path":"/api/v1/preview/apps/{app}/platform/files/{path}","permission":"CLI DevSession on app/dev, current use and platform:files:write approval","description":"Same bounded Storage upload contract through the local backend capability proxy","binary":true}),
-        serde_json::json!({"id":"preview_file_attach","method":"POST","path":"/api/v1/preview/apps/{app}/platform/files/{path}","permission":"CLI DevSession on app/dev, current use and platform:files:write approval","description":"Same Storage attach contract for the actual dev installation; the detach path takes the detach input","input":schemars::schema_for!(crate::storage_contract::AttachFile)}),
-        serde_json::json!({"id":"preview_file_cancel","method":"DELETE","path":"/api/v1/preview/apps/{app}/platform/files/{path}","permission":"CLI DevSession on app/dev, current use and platform:files:write approval","description":"Same explicit unattached cancellation contract for the actual dev installation"}),
+        serde_json::json!({"id":"preview_file_reserve","method":"POST","path":"/api/v1/preview/apps/{app}/platform/files","permission":"scoped preview browser grant, current dev use and platform:files:write approval","description":"Native local backend capability proxy only; never browser credentials or production installations","input":schemars::schema_for!(crate::storage_contract::ReserveFile)}),
+        serde_json::json!({"id":"preview_file_read","method":"GET","path":"/api/v1/preview/apps/{app}/platform/files/{path}","permission":"scoped preview browser grant, current dev use and platform:files:read approval","description":"Same Storage metadata/stream contract scoped to the current dev installation"}),
+        serde_json::json!({"id":"preview_file_upload","method":"PUT","path":"/api/v1/preview/apps/{app}/platform/files/{path}","permission":"scoped preview browser grant, current dev use and platform:files:write approval","description":"Same bounded Storage upload contract through the local backend capability proxy","binary":true}),
+        serde_json::json!({"id":"preview_file_attach","method":"POST","path":"/api/v1/preview/apps/{app}/platform/files/{path}","permission":"scoped preview browser grant, current dev use and platform:files:write approval","description":"Same Storage attach contract for the actual dev installation; the detach path takes the detach input","input":schemars::schema_for!(crate::storage_contract::AttachFile)}),
+        serde_json::json!({"id":"preview_file_cancel","method":"DELETE","path":"/api/v1/preview/apps/{app}/platform/files/{path}","permission":"scoped preview browser grant, current dev use and platform:files:write approval","description":"Same explicit unattached cancellation contract for the actual dev installation"}),
     ]
 }
 

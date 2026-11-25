@@ -673,7 +673,7 @@ mod tests {
             "platformBundleVersion",
             "docs/CLI-REFERENCE.md",
             "docs/ACCEPTANCE.md",
-            "/preview/apps/{app}/context",
+            "/preview/apps/{app}/browser/context",
             "/platform/directory",
             "Do not repeat registration or request `platform:directory:read`",
             "Deploy only with the user's authorization",

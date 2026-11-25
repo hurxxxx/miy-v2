@@ -505,6 +505,7 @@ pub async fn principal(state: &State, token: &str) -> ApiResult<Principal> {
     }
     Ok(Principal {
         browser_purpose: None,
+        preview_login: None,
         cli_session_id: Some(row.get("cli_session_id")),
         delegation_id: row.get("delegation_id"),
         id: row.get("user_id"),

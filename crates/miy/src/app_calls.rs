@@ -149,6 +149,7 @@ pub async fn authenticate(s: &State, token: &str) -> ApiResult<(Principal, Conte
     let p = Principal {
         browser_purpose: None,
         id: row.get("user_id"),
+        preview_login: None,
         cli_session_id: row.get("cli_session_id"),
         delegation_id: row.get("delegation_id"),
         scopes: vec!["miy.read".into()],

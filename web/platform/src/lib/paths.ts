@@ -112,3 +112,8 @@ export function requestId() {
   const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
+
+/** Only the platform's local preview flow may resume here after dev sign-in. */
+export function previewReturnPath(path: string | null) {
+  return path && /^\/preview\/login\/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(path) ? path : null;
+}

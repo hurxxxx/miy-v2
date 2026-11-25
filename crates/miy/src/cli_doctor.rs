@@ -262,7 +262,7 @@ fn assess_capabilities(value: &Value, develop: bool) -> (Check, Option<String>) 
     let features = value["features"].as_array();
     let mut required = REQUIRED_FEATURES.to_vec();
     if develop {
-        required.extend(["development.sessions.v1", "preview.context.v1"]);
+        required.extend(["development.sessions.v1", "preview.browser.v1"]);
     }
     let missing: Vec<_> = required
         .iter()
@@ -692,7 +692,7 @@ mod tests {
         develop["features"]
             .as_array_mut()
             .unwrap()
-            .push(json!("preview.context.v1"));
+            .push(json!("preview.browser.v1"));
         assert_eq!(assess_capabilities(&develop, true).0.status, "pass");
         let mut invalid = value.clone();
         invalid["features"] = json!([]);
