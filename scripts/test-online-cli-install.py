@@ -27,7 +27,18 @@ class OnlineInstall(unittest.TestCase):
         for name in ("BASH_ENV", "ENV", "XDG_CONFIG_HOME", "ZDOTDIR"):
             self.env.pop(name, None)
         # Test the real packaged installer, with a tiny CLI to observe its calls.
-        binary = b'#!/usr/bin/env bash\nif [ "$1" = --version ]; then echo "miy 9.9.9"; else printf "%s\\n" "$@" >> "$HOME/cli-calls"; echo "{}"; fi\n'
+        binary = b"""#!/usr/bin/env bash
+if [ "$1" = --version ]; then echo 'miy 9.9.9'; exit 0; fi
+printf '%s\\n' "$@" >> "$HOME/cli-calls"
+case "$*" in
+  *'auth status') if [ -f "$HOME/config/signed-in-fixture" ]; then
+    echo '{"ok":true,"data":{"authenticated":true}}'
+  else
+    echo '{"ok":false,"error":{"code":"login_required"}}'; exit 3
+  fi ;;
+  *) echo '{"ok":true,"data":{"setupRequired":false,"serverMismatch":false}}' ;;
+esac
+"""
         self.binary_hash = hashlib.sha256(binary).hexdigest()
         buffer = io.BytesIO()
         with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
@@ -83,6 +94,7 @@ class OnlineInstall(unittest.TestCase):
         config.mkdir()
         saved = config / "credentials.json"
         saved.write_text("existing-credential-sentinel")
+        (config / "signed-in-fixture").touch()
         profile = self.home / ".profile"
         profile.write_text("# user's existing configuration\n")
         for _ in range(2):
@@ -95,7 +107,10 @@ class OnlineInstall(unittest.TestCase):
         self.assertTrue(profile.read_text().startswith("# user's existing configuration\n"))
         calls = (self.home / "cli-calls").read_text()
         self.assertIn("context\ninit\n--url\n" + self.origin, calls)
-        self.assertNotIn("auth", calls)
+        self.assertIn("auth\nstatus", calls)
+        self.assertNotIn("auth\nlogin", calls)
+        self.assertIn("Already signed in", result.stdout)
+        self.assertNotIn("Next: miy auth login", result.stdout)
         self.assertEqual(len(self.paths), 2)
 
     def test_archive_tamper_preserves_existing_install(self):
@@ -129,6 +144,7 @@ class OnlineInstall(unittest.TestCase):
         result = self.run_install("--no-modify-path")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.paths, ["/mac-arm64"])
+        self.assertIn("Next: miy auth login", result.stdout)
         self.assertFalse((self.home / ".profile").exists())
         uname.write_text('#!/bin/sh\necho unsupported\n')
         result = self.run_install()

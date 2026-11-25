@@ -35,7 +35,7 @@
             $Status = $StatusJson | ConvertFrom-Json
             if ($StatusExit -eq 0 -and $Status.data.authenticated) {
                 Write-Host 'Already signed in. For an existing app, run the global miy app setup in its project.'
-            } elseif ($Status.error.code -in @('login_required', 'session_expired', 'unauthorized')) {
+            } elseif ($Status.error.code -in @('login_required', 'session_expired_or_revoked', 'session_expired', 'unauthorized')) {
                 Write-Host 'Installed. Next: miy auth login'
             } else {
                 Write-Host 'Installed. Inspect miy auth status to verify the current session.'
