@@ -21,6 +21,7 @@ import re
 import sys
 
 REASONS = {
+    "signup-intake": "anonymous, rate-limited signup requests only; creating the account requires a separate administrator approval",
     "support-intake": "explicit anonymous report intake; bounded unverified data, no authenticated authority or identity",
     "account-link": "completes an administrator's one-time link without a session; the transaction re-checks the link and that its issuer is still an enabled administrator",
     "user-switch": "exchanges an administrator's one-time switch code without a session; the transaction consumes the code and re-checks that the target is enabled and its issuer is still an enabled administrator (the issue itself is a decided policy::Write)",
@@ -34,6 +35,7 @@ REASONS = {
 
 # (module, function): reason key
 TRANSACTIONS = {
+    ("accounts.rs", "request_signup"): "signup-intake",
     ("support.rs", "submit"): "support-intake",
     ("accounts.rs", "complete"): "account-link",
     ("accounts.rs", "claim_reset"): "account-link",
