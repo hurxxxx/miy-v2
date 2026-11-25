@@ -7,7 +7,7 @@
 | 항목 | 새 호스트 구성 |
 | --- | --- |
 | 서버 | `185.223.207.238`, Ubuntu 26.04.1 LTS, 3 vCPU, 약 12GiB RAM |
-| 배포 소스 | Core·worker·CLI·프레임 런타임 `bb92db3`, 포털 `122d787`, 앱 카탈로그 `a45914a`. Core/CLI 0.20.0, SDK 번들 0.15.0, schema 35 |
+| 배포 소스 | Core·worker `a1adebc`, CLI·프레임 런타임 `bb92db3`, 포털 `122d787`, 앱 카탈로그 `a45914a`. Core/CLI 0.20.0, SDK 번들 0.15.0, schema 35 |
 | 업무 포털 | `https://portal.miy.works` |
 | 관리·CLI 승인·IdP | `https://console.miy.works` |
 | 내부 앱 개발 포털 | `https://dev.miy.works` |
@@ -15,6 +15,7 @@
 | 서비스·계정 | `miy-prod-serve`, `miy-prod-worker`, OS 사용자 `miy` |
 | 상태·바이너리 | `/srv/miy-prod`(0700), `/srv/miy-prod/bin/miy-server` |
 | 통합 설치·HTTP MCP | [코딩 에이전트 연결](https://portal.miy.works/cli/install), [CLI 명령 문서](https://portal.miy.works/cli/install#cli-reference), [MCP 설치와 연결](https://portal.miy.works/cli/install#mcp-setup). HTTP MCP 주소는 `https://portal.miy.works/mcp`다. 포털 반영 기록은 `/srv/miy-prod/evidence/setup-guide.ePd3fCWb/portal-final.json`에 있다. |
+| 에이전트 앱 개발 안내 | [코딩 에이전트가 읽는 공개 원문](https://portal.miy.works/api/v1/cli/agent-setup), [Codex·Claude Code의 개별 앱 dev 게시 검증](releases/miy-works-agent-guide-2026-11-25.md) |
 | 사용자 CLI | `/home/miy/.local/bin/miy` 0.20.0. `default` context → 업무 포털 |
 | 계정 발급 | 공개 `/signup`에서 신청하고 콘솔 `/admin/users`의 **회원가입 신청**에서 승인·거절한다. 관리자가 일회용 링크를 직접 전달한다. 기존 초대·비밀번호 재설정도 같은 화면에서 제공한다. 로그인 서버 관리 호출은 loopback 18181, 서비스 클라이언트 `miy-accounts` |
 | 백업 | 매일 03:30 KST 무중단 `miy-prod-online-backup`(14일 보관), 변경 전 중지 백업 `miy-prod-backup` |
