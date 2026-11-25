@@ -50,6 +50,8 @@ Cargo·pnpm은 OS 사용자 `miy`로 실행한다. 검증 웹 빌드는 별도 o
 
 2026-11-24에 파일럿 인수 앱 3개의 dev 설치와 User test codex·claude의 dev·prod 설치를 제거하고 카탈로그 등록을 정리했다. 보존된 앱 DB 7개의 덤프와 첨부파일 4개의 복구본은 `/srv/miy-backups/retired-apps/20261124T070846Z`에 있다.
 
+2026-11-25에 설치 검증용 `guide-codex-1125`와 `guide-claude-1125`의 dev 설치·카탈로그 등록·전용 런타임을 제거했다. 앱 DB 역할의 로그인을 차단했다. 복원을 검증한 DB 덤프, 소스, 릴리스 산출물과 이미지 보관 위치는 `/srv/miy-backups/retired-apps/20261125T064344Z`다.
+
 서버 사용자 `miy`의 CLI `default` context는 새 포털로 변경했다. 외부 개발 PC는 자동 변경되지 않으므로 새 context를 등록하고 재로그인한다. 프로젝트 stdio MCP는 로컬 CLI context를 확인하고, 직접 HTTP MCP 연결은 새 URL로 재인증한다. 브라우저도 새 주소에서 다시 로그인한다.
 
 ```bash

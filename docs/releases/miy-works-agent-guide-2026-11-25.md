@@ -6,7 +6,7 @@
 
 | 항목 | Codex 일정 계산 | Claude 비품 수량·금액 계산 |
 | --- | --- | --- |
-| 앱 | [dev에서 열기](https://dev.miy.works/environments/dev/apps/guide-codex-1125) | [dev에서 열기](https://dev.miy.works/environments/dev/apps/guide-claude-1125) |
+| 검증에 사용한 앱 ID | `guide-codex-1125` | `guide-claude-1125` |
 | 소스 커밋 | `3d4fe749187c0c35473154a013900a9abdcf1ddd` | `9159c2484d1a208855aa0f89bb151f0bb21567d0` |
 | 성공한 서버 빌드 | `6af786f4-3348-45bf-b46e-7bf7bd8dae53` | `e52f3431-bf42-474d-b161-6969613bc89d` |
 | dev 배포 작업 | `6c051dff-6ca8-4655-9db2-727881ad9d33` | `3fc2c8e7-29d2-431f-a4cb-4a5601eaf850` |
@@ -29,4 +29,6 @@
 
 2026-11-25 03:11 UTC에 공유 코어와 worker에 최종본을 반영했다. 포털·콘솔·dev에서 반환한 안내문과 배포 소스의 SHA-256은 모두 `a25a3c519e32dc2bc52e79333396246048995691d849689077d28433b8c665fd`였다. 안내 경로 관련 테스트 8개가 통과했고, 게시 CLI 0.20.0으로 서로 다른 명령 예시 31개의 구문을 확인했다. 호스트 반영 기록은 `/srv/miy-prod/evidence/agent-guide-dev.VAod4lxx/preview/rollout.json`에 있다.
 
-브라우저 검증을 마치고 임시 일반 계정을 비활성화했다. 해당 계정의 활성 CLI 세션은 0개이며 두 검증 앱은 dev에서 계속 열 수 있다. 최종 확인 기록은 `/srv/miy-prod/evidence/agent-guide-browser.pgDd6ng6/cleanup-verified.json`에 있다.
+브라우저 검증을 마치고 임시 일반 계정을 비활성화했다. 당시 해당 계정의 활성 CLI 세션은 0개였다. 계정 확인 기록은 `/srv/miy-prod/evidence/agent-guide-browser.pgDd6ng6/cleanup-verified.json`에 있다.
+
+같은 날 두 앱의 dev 설치와 카탈로그 등록을 제거했다. 두 앱 모두 prod 설치는 없었다. 복구용 보관 위치는 [서버 운영 안내](../SERVER-OPERATIONS.md)에 기록했다.
