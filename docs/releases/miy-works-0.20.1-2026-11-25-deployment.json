@@ -1,0 +1,84 @@
+{
+  "host": "miy.works",
+  "appliedAtUtc": "2026-11-25T06:35:07.529224+00:00",
+  "sourceCommit": "1cc081c1de6d85c533d9087891a6cb3b62e2f418",
+  "version": "0.20.1",
+  "services": [
+    "miy-prod-serve",
+    "miy-prod-worker"
+  ],
+  "coreSchema": 36,
+  "sdkBundle": "0.15.0",
+  "guidanceVersion": "1.0.5",
+  "backup": {
+    "onlineDatabases": 20,
+    "path": "/srv/miy-backups/online/20261125T061427Z",
+    "restoreVerified": true,
+    "matchedTables": 59,
+    "rehearsedMigration": [
+      35,
+      36
+    ],
+    "beforeFiles": "/srv/miy-prod/evidence/release-0201.WcF6fJox/before-0j_2ocg8"
+  },
+  "ci": {
+    "candidate": "https://github.com/hurxxxx/miy-v2/actions/runs/45559795155",
+    "cliFoundation": "https://github.com/hurxxxx/miy-v2/actions/runs/45559795024",
+    "web": "https://github.com/hurxxxx/miy-v2/actions/runs/45559795014",
+    "correctedCheck": "Explicit anonymous signup intake added to the reviewed write-decision list. Approval and account creation retain their existing policy checks."
+  },
+  "public": {
+    "verifiedOrigins": [
+      "https://portal.miy.works",
+      "https://console.miy.works",
+      "https://dev.miy.works"
+    ],
+    "publishedCliTargets": 5,
+    "tunnelHelpers": 2,
+    "verifiedDownloadBytes": 258840049,
+    "linuxOnlineInstall": "pass",
+    "agentSetupMatchesSource": true,
+    "generatedAgentInstructions": {
+      "guidanceVersion": "1.0.5",
+      "codexInstructions": true,
+      "claudeInstructions": true,
+      "storageRecoveryInGeneratedWorkflow": true
+    },
+    "existingInstallationsPreservedAtRollout": true
+  },
+  "regression": {
+    "serverBuildGroups": 12,
+    "sharedDevelopmentGroups": 20,
+    "firstDevPreviewBeforeInstallation": "isolated PostgreSQL and real HTTP/CLI"
+  },
+  "liveWorker": {
+    "app": "guide-codex-1125",
+    "buildId": "71f7f4cd-ab02-48db-842d-a089ce9de696",
+    "buildRequests": 1,
+    "result": "succeeded",
+    "retainedUpload": true,
+    "beforeCleanupAvailableBytes": 18184081408,
+    "afterCacheCleanupAvailableBytes": 18796756992,
+    "sameIdAfterOperatorRelief": true,
+    "publishedBusinessRelease": false
+  },
+  "capacity": {
+    "archivedPastTestExecutables": 52,
+    "verifiedArchives": [
+      "/srv/miy-prod/evidence/release-0201.WcF6fJox/archived-cli-qa/manifest.json",
+      "/srv/miy-prod/evidence/release-0201.WcF6fJox/archived-other-cli-qa/manifest.json"
+    ],
+    "postVerification": {
+      "observedAtUtc": "2026-11-25T06:40:47.152716+00:00",
+      "freeBytes": 23047196672,
+      "floorBytes": 21643216896
+    }
+  },
+  "mfgPlm": {
+    "devVersion": "0.1.0",
+    "devStatus": "running",
+    "requestedVersion": "0.1.1",
+    "requestedCommit": "9e923fe5c6c54862e6ec6d00e4f35b25b1b5d251",
+    "retry": "The failed upload was not retained on the 0.20.0 worker. Resubmit from the developer checkout."
+  }
+}

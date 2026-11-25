@@ -7,7 +7,7 @@
 | 항목 | 새 호스트 구성 |
 | --- | --- |
 | 서버 | `185.223.207.238`, Ubuntu 26.04.1 LTS, 3 vCPU, 약 12GiB RAM |
-| 배포 소스 | Core·worker `a1adebc`, CLI·프레임 런타임 `bb92db3`, 포털 `122d787`, 앱 카탈로그 `a45914a`. Core/CLI 0.20.0, SDK 번들 0.15.0, schema 35 |
+| 배포 소스 | Core·worker·CLI `1cc081c`, 프레임 런타임 `bb92db3`, 포털 `122d787`, 앱 카탈로그 `a45914a`. Core/CLI 0.20.1, SDK 번들 0.15.0, schema 36 |
 | 업무 포털 | `https://portal.miy.works` |
 | 관리·CLI 승인·IdP | `https://console.miy.works` |
 | 내부 앱 개발 포털 | `https://dev.miy.works` |
@@ -16,7 +16,7 @@
 | 상태·바이너리 | `/srv/miy-prod`(0700), `/srv/miy-prod/bin/miy-server` |
 | 통합 설치·HTTP MCP | [코딩 에이전트 연결](https://portal.miy.works/cli/install), [CLI 명령 문서](https://portal.miy.works/cli/install#cli-reference), [MCP 설치와 연결](https://portal.miy.works/cli/install#mcp-setup). HTTP MCP 주소는 `https://portal.miy.works/mcp`다. 포털 반영 기록은 `/srv/miy-prod/evidence/setup-guide.ePd3fCWb/portal-final.json`에 있다. |
 | 에이전트 앱 개발 안내 | [코딩 에이전트가 읽는 공개 원문](https://portal.miy.works/api/v1/cli/agent-setup), [Codex·Claude Code의 개별 앱 dev 게시 검증](releases/miy-works-agent-guide-2026-11-25.md) |
-| 사용자 CLI | `/home/miy/.local/bin/miy` 0.20.0. `default` context → 업무 포털 |
+| 사용자 CLI | `/home/miy/.local/bin/miy` 0.20.1. `default` context → 업무 포털 |
 | 계정 발급 | 공개 `/signup`에서 신청하고 콘솔 `/admin/users`의 **회원가입 신청**에서 승인·거절한다. 관리자가 일회용 링크를 직접 전달한다. 기존 초대·비밀번호 재설정도 같은 화면에서 제공한다. 로그인 서버 관리 호출은 loopback 18181, 서비스 클라이언트 `miy-accounts` |
 | 백업 | 매일 03:30 KST 무중단 `miy-prod-online-backup`(14일 보관), 변경 전 중지 백업 `miy-prod-backup` |
 | DB·Keycloak | `miy-prod-postgres-1`, `miy-prod-keycloak-1`; loopback 15432, 18181 |
@@ -97,6 +97,8 @@ CLI 업데이트 안내 후속으로 Core·worker·웹과 CLI 0.12.1을 같은 �
 **2026-11-23 0.18.0.** 포털과 프레임 런타임을 먼저 반영했고 Core·worker, CLI 패키지 5종·helper 2종을 같은 출처로 갱신했다. 격리 복원을 확인한 백업과 배포 전 실행 파일·정적 진입 파일의 위치는 [배포 기록](releases/miy-works-0.18.0-2026-11-23-deployment.json)에 있다.
 
 **2026-11-24 0.19.0.** Core·worker와 프레임 런타임에 공동편집용 바이너리 전송을 반영하고, 포털과 CLI를 같은 커밋에서 게시했다. 이어서 Core·worker가 이미지에서 명세·빌드 정보·마이그레이션·UI만 가져오도록 수정해 Node 변환기가 앱 컨테이너 안에서 실행되게 했다. Docs·화이트보드 0.2.0은 각각 dev에서 검증한 이미지로 prod에서 실행한다. 두 환경 모두 앱에 승인한 권한은 `platform:directory:read` 하나다. 포털에서 앱을 열려면 해당 앱의 prod 사용 권한이 필요하다. [배포·복원 기록](releases/miy-works-0.19.0-2026-11-24-deployment.json)
+
+**2026-11-25 0.20.1.** 복원한 운영 DB에서 schema 35→36을 검증한 후 Core·worker와 CLI 다섯 종, 연결 helper 두 종을 게시했다. 실제 서버 빌드가 공간 부족으로 대기한 뒤 같은 빌드 ID로 완료됐다. 이전 검증용 실행 파일의 압축 보관본과 복원 경로는 반영 기록에 있다. [0.20.1 운영 반영 기록](releases/miy-works-0.20.1-2026-11-25-deployment.json)
 
 `app.release-source.v1`을 반영한 서버에서는 `MIY_ARTIFACTS` 아래 `.builds/sources/`를 Core DB와 함께 비공개로 백업한다. Core DB에는 릴리스와 빌드 영수증이 있고 아카이브 바이트는 이 디렉터리에 있다. 복원 후 [릴리스 소스 다운로드](RUNNING.md#릴리스-소스-다운로드와-복구)로 SHA-256을 확인한다. 현재 구현은 성공한 빌드의 소스도 보관한다. 릴리스로 연결되지 않은 아카이브의 자동 만료 정책은 후속 범위다.
 

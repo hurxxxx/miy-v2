@@ -101,7 +101,7 @@ Storage 한도(M10, schema 33)는 다음과 같다. 한 요청 업로드 10MiB, 
 
 **Docker 저장 공간 하한 (현재 구현, 2026-11-03).** 이미지를 늘리는 작업 직전에 Docker data root(`docker info`의 `DockerRootDir`)의 여유를 확인한다. 대상은 서버 빌드 시작과, 로컬에 없는 이미지의 배포 적재(`docker load`)다. 여유가 15GiB 미만이거나 15% 미만이면 `docker_storage_low`, 측정할 수 없으면 `docker_storage_unknown`으로 작업을 거부한다. 두 코드 모두 공간을 확보한 뒤 다시 요청할 수 있다. 단일 서버에서는 PostgreSQL 볼륨도 같은 파일시스템에 있으므로, 이 하한은 빌드보다 DB 쓰기를 먼저 보호한다. 하한은 `MIY_DOCKER_MIN_FREE_GIB`·`MIY_DOCKER_MIN_FREE_PERCENT`로 조정하며, 둘 다 0이면 점검을 끈다(data root를 로컬에서 잴 수 없는 호스트용).
 
-0.20.1 후보의 서버 빌드 worker는 여유 공간이 부족한 경우 기본 BuildKit 빌더의 미사용 캐시를 작업당 최대 한 번 정리한다. 이미 다른 빌드가 공간을 기다리고 있으면 정리를 중복 실행하지 않는다. 목표는 설정된 두 하한을 모두 만족하는 여유 바이트 수다. 정리 직후 다시 측정하고, 여전히 부족하면 소스와 빌드 ID를 보관한 채 `waiting_for_storage`로 대기한다. 30초 간격으로 권한과 디스크를 다시 확인하며 대기 중에는 빌드 실행 잠금을 반환한다. 빌드 시작 후 15분이 지나도 공간이 부족하면 `docker_storage_low`와 측정값을 기록한다. 개발자는 `miy job logs BUILD_ID`로 확인할 수 있다. 0.20.0은 처음 하한에 미달할 때 즉시 실패한다. [Docker 빌드 캐시 정리 범위](https://docs.docker.com/reference/cli/docker/buildx/prune/)
+miy.works에 배포된 0.20.1의 서버 빌드 worker는 여유 공간이 부족한 경우 기본 BuildKit 빌더의 미사용 캐시를 작업당 최대 한 번 정리한다. 이미 다른 빌드가 공간을 기다리고 있으면 정리를 중복 실행하지 않는다. 목표는 설정된 두 하한을 모두 만족하는 여유 바이트 수다. 정리 직후 다시 측정하고, 여전히 부족하면 소스와 빌드 ID를 보관한 채 `waiting_for_storage`로 대기한다. 30초 간격으로 권한과 디스크를 다시 확인하며 대기 중에는 빌드 실행 잠금을 반환한다. 빌드 시작 후 15분이 지나도 공간이 부족하면 `docker_storage_low`와 측정값을 기록한다. 개발자는 `miy job logs BUILD_ID`로 확인할 수 있다. 0.20.0은 처음 하한에 미달할 때 즉시 실패한다. [Docker 빌드 캐시 정리 범위](https://docs.docker.com/reference/cli/docker/buildx/prune/)
 
 기준값은 v1의 검증값(15GiB·15%)을 그대로 쓴다. 2026-11-03 이 호스트의 실측값은 다음과 같다.
 - v2 앱 이미지: 1개 약 123MB
