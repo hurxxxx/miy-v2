@@ -673,6 +673,8 @@ mod tests {
             "platformBundleVersion",
             "docs/CLI-REFERENCE.md",
             "docs/ACCEPTANCE.md",
+            "/platform/directory",
+            "docker_storage_low",
             "miy app source-pin",
             "miy app deploy --environment dev --dry-run",
             "miy job resume BUILD_ID --environment dev",
