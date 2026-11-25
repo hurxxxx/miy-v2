@@ -399,6 +399,23 @@ def check(cli):
                             "A connected project MCP must permit a tooling refresh")
                 finally:
                     active.terminate()
+            # Simulate a previous project version still used directly for MCP.
+            # A PE overlay changes its hash while preserving the runnable image.
+            with project_cli.open("ab") as old:
+                old.write(b"older CLI fixture")
+            with subprocess.Popen([str(project_cli), "mcp"], cwd=project, env=env,
+                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL) as holder:
+                try:
+                    failure = run(["app", "setup"], cwd=project, expected=6)["error"]
+                    require(failure["code"] == "managed_files_in_use", "Missing Windows lock diagnostic")
+                    details = failure["details"]
+                    require(Path(details["file"]).name == "miy.exe"
+                            and any(item["pid"] == holder.pid for item in details["processes"]),
+                            "The locked project CLI and its running process must be identified")
+                finally:
+                    holder.terminate()
+            run(["app", "setup"], cwd=project, command="app setup")
         before = (project / "miy.cli.json").read_bytes()
         run(["app", "setup"], cwd=project, command="app setup")
         require((project / "miy.cli.json").read_bytes() == before, "Repeated setup changed its lock")
