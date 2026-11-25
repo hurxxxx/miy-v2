@@ -22,6 +22,16 @@ pub fn project_cli(root: &Path) -> PathBuf {
     root.join(project_cli_relative())
 }
 
+// A running Windows executable cannot be replaced. Pin the MCP process to
+// its CLI version so the regular project command is available to setup.
+pub fn project_mcp_relative() -> &'static str {
+    if cfg!(windows) {
+        concat!(".miy-tools/mcp/", env!("CARGO_PKG_VERSION"), "/miy.exe")
+    } else {
+        project_cli_relative()
+    }
+}
+
 fn cargo_bin() -> Option<PathBuf> {
     std::env::var_os("CARGO_HOME")
         .map(PathBuf::from)

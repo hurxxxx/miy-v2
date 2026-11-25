@@ -198,6 +198,61 @@ fn read(root: &Path, relative: &str) -> Result<Option<Vec<u8>>> {
     Ok(Some(std::fs::read(path)?))
 }
 
+#[cfg(windows)]
+fn locking_processes(path: &Path) -> Vec<serde_json::Value> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::{
+        Foundation::{ERROR_MORE_DATA, ERROR_SUCCESS},
+        System::RestartManager::*,
+    };
+    let mut handle = 0;
+    let mut key = [0u16; CCH_RM_SESSION_KEY as usize + 1];
+    let name: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    // Restart Manager only enumerates current owners; it does not stop processes.
+    unsafe {
+        if RmStartSession(&mut handle, 0, key.as_mut_ptr()) != ERROR_SUCCESS {
+            return vec![];
+        }
+        let owners = (|| {
+            if RmRegisterResources(
+                handle,
+                1,
+                &name.as_ptr(),
+                0,
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+            ) != ERROR_SUCCESS
+            {
+                return vec![];
+            }
+            let (mut needed, mut count, mut reasons) = (0, 0, 0);
+            let mut rows = Vec::<RM_PROCESS_INFO>::new();
+            for _ in 0..3 {
+                let ptr = if rows.is_empty() {
+                    std::ptr::null_mut()
+                } else {
+                    rows.as_mut_ptr()
+                };
+                match RmGetList(handle, &mut needed, &mut count, ptr, &mut reasons) {
+                    ERROR_SUCCESS => return rows.iter().take(count as usize).map(|row| {
+                        let end = row.strAppName.iter().position(|c| *c == 0).unwrap_or(row.strAppName.len());
+                        serde_json::json!({"pid":row.Process.dwProcessId, "name":String::from_utf16_lossy(&row.strAppName[..end])})
+                    }).collect(),
+                    ERROR_MORE_DATA if needed <= 256 => {
+                        count = needed;
+                        rows.resize(count as usize, RM_PROCESS_INFO::default());
+                    }
+                    _ => break,
+                }
+            }
+            vec![]
+        })();
+        RmEndSession(handle);
+        owners
+    }
+}
+
 fn probe_replace(path: &Path) -> Result<()> {
     #[cfg(windows)]
     if path.exists() {
@@ -208,7 +263,17 @@ fn probe_replace(path: &Path) -> Result<()> {
         };
         std::fs::OpenOptions::new().access_mode(GENERIC_READ | GENERIC_WRITE | DELETE)
             .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE).open(path)
-            .map_err(|_| conflict("managed_files_in_use", "Close the project's CLI/MCP processes and retry using the global CLI. No process was terminated."))?;
+            .map_err(|e| {
+                let sharing = matches!(e.raw_os_error(), Some(5 | 32 | 33));
+                let processes = if sharing { locking_processes(path) } else { vec![] };
+                let locked = matches!(e.raw_os_error(), Some(32 | 33)) || !processes.is_empty();
+                let error = if locked {
+                    CliError::new(Category::Conflict, "managed_files_in_use", "Close the application using this file and retry from the global CLI.")
+                } else {
+                    CliError::new(Category::Environment, "managed_file_access_failed", "Check file access and retry from the global CLI.")
+                };
+                error.with_details(serde_json::json!({"file":path,"processes":processes,"osCode":e.raw_os_error()}))
+            })?;
     }
     #[cfg(not(windows))]
     let _ = path;

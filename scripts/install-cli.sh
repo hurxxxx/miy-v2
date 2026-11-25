@@ -46,7 +46,15 @@ context_args=(--output json --no-input context init)
 if [ -n "$server" ]; then context_args+=(--url "$server"); fi
 if setup_result="$("$prefix/miy" "${context_args[@]}")"; then
   echo "$setup_result"
-  echo 'Server setup checked. Inspect activeOrigin, requestedOrigin and serverMismatch above before login; existing connections are preserved.'
+  if [[ "$setup_result" =~ \"(setupRequired|serverMismatch)\"[[:space:]]*:[[:space:]]*true ]]; then
+    echo 'Use the context recovery instructions above, then run miy auth status.'
+  elif status_result="$(cd "$prefix" && unset MIY_CONTEXT && ./miy --output json --no-input auth status 2>/dev/null)"; then
+    echo 'Already signed in. For an existing app, run the global miy app setup in its project.'
+  elif [[ "$status_result" =~ \"code\"[[:space:]]*:[[:space:]]*\"(login_required|session_expired|unauthorized)\" ]]; then
+    echo 'Next: miy auth login'
+  else
+    echo 'Authentication status could not be verified. Inspect miy auth status before signing in.'
+  fi
 else
   status=$?
   # Only the typed missing-address result may defer setup. Unsupported CLIs,

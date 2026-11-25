@@ -63,8 +63,8 @@ miy_install_online() (
     for profile in "${profiles[@]}"; do
       if ! grep -Fqx -- "$path_line" "$profile" 2>/dev/null; then printf '\n# miy CLI\n%s\n' "$path_line" >> "$profile"; fi
     done
-    echo 'Open a new terminal, then run: miy auth login'
+    echo 'Open a new terminal to use the updated PATH.'
   fi
-  printf 'Or log in from this terminal: %q auth login\n' "$prefix/miy"
+
 )
 miy_install_online "$@"

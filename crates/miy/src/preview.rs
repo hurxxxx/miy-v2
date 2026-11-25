@@ -338,7 +338,7 @@ async fn serve_preview(
         crate::development_client::validate_origin(&session.origin)?;
     }
     let user = app_cli::api(&session, "/api/v1/me", None).await?;
-    let m = app_cli::check()?;
+    let m = app_cli::check_project()?;
     if *shutdown.borrow() != Shutdown::Running {
         return Ok(());
     }
@@ -348,6 +348,16 @@ async fn serve_preview(
         user["id"].as_str().context("missing_preview_subject")?,
     )
     .await?;
+    app_cli::run("pnpm", &["install", "--frozen-lockfile"])?;
+    // The Dockerfile copies the packaged UI. Native preview serves the
+    // standalone preview bundle; node-profile apps may also build a sidecar.
+    if runtime == Runtime::Docker || m.runtime.profile == "rust-web-node-v1" {
+        app_cli::run("pnpm", &["build"])?;
+        crate::cli_error::validation(
+            crate::bundle::ui(std::path::Path::new("dist/ui")),
+            "ui_invalid",
+        )?;
+    }
     app_cli::run("pnpm", &["build:preview"])?;
     app_cli::save(
         "dist/build.json",

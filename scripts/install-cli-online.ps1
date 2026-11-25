@@ -22,11 +22,25 @@
         if ((Get-FileHash -Algorithm SHA256 -LiteralPath $Binary).Hash.ToLowerInvariant() -ne $BinarySha256) { throw 'CLI binary checksum mismatch; nothing installed.' }
         $ActualVersion = & $Binary --version
         if ($LASTEXITCODE -ne 0 -or $ActualVersion -ne "miy $Version") { throw 'CLI version mismatch or incompatible system.' }
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Extract 'install-cli.ps1') -ArchivePath $Archive -Sha256 $ExpectedSha256 -Server $Server -NonInteractive -AddToPath
+        $InstallResult = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Extract 'install-cli.ps1') -ArchivePath $Archive -Sha256 $ExpectedSha256 -Server $Server -NonInteractive -AddToPath
         if ($LASTEXITCODE -ne 0) { throw 'CLI installation or server registration failed.' }
         $InstallDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Programs\miy\bin'
         if (($env:PATH -split ';') -notcontains $InstallDir) { $env:PATH = "$InstallDir;$env:PATH" }
-        Write-Host 'Installed. Next: miy auth login'
+        $Setup = ($InstallResult | ConvertFrom-Json).contextInitialization
+        if ($Setup.setupRequired -or $Setup.serverMismatch -or -not $Setup.active) {
+            Write-Host 'Installed. Inspect miy context show before signing in.'
+        } else {
+            $StatusJson = & (Join-Path $InstallDir 'miy.exe') --context $Setup.active --no-input --output json auth status
+            $StatusExit = $LASTEXITCODE
+            $Status = $StatusJson | ConvertFrom-Json
+            if ($StatusExit -eq 0 -and $Status.data.authenticated) {
+                Write-Host 'Already signed in. For an existing app, run the global miy app setup in its project.'
+            } elseif ($Status.error.code -in @('login_required', 'session_expired', 'unauthorized')) {
+                Write-Host 'Installed. Next: miy auth login'
+            } else {
+                Write-Host 'Installed. Inspect miy auth status to verify the current session.'
+            }
+        }
     } finally {
         Remove-Item -LiteralPath $Temporary -Recurse -Force
     }

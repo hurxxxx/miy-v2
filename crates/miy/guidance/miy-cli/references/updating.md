@@ -9,8 +9,8 @@ Reading it does not download, install or authenticate anything.
    If configuration cannot be read, obtain the portal origin from the operator.
    There is no built-in domain: domain names and IP addresses with ports are both
    supported. Use the portal origin, not the console or app-development portal.
-2. **Update the global CLI from a normal terminal.** Stop local preview and close
-   Codex/Claude Code sessions using the CLI before replacing executables;
+2. **Update the global CLI from a normal terminal.** Stop local preview. For the first Windows migration, close any old
+   MCP session using the executable being replaced;
    Windows refuses replacement while an executable is in use. Run the same
    installer again as the same OS user. Existing contexts and credentials are
    preserved. Keep any custom installation prefix; do not uninstall or delete
@@ -44,6 +44,7 @@ miy app setup
 
 This copies that executable into `.miy-tools`, refreshes CLI manuals/skills,
 `docs/API.md` and Codex/Claude MCP settings, and preserves authentication.
+On Windows, new MCP configurations run a versioned executable. An active adapter can finish its work while setup installs a new version. Restart the agent to load the new tools.
 Running an old project's `.miy-tools/miy app setup` copies the
 old executable again. With the same SDK bundle, `app setup` is sufficient. If
 the installed SDK bundle differs, review and commit clean project source before

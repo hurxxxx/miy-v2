@@ -476,7 +476,7 @@ async fn mcp_start_check(root: &Path) -> Check {
 
 async fn probe_mcp(root: &Path) -> std::result::Result<(), ProbeFailure> {
     let root = root.canonicalize().map_err(|_| ProbeFailure::Unavailable)?;
-    let binary = crate::platform::project_cli(&root);
+    let binary = root.join(crate::platform::project_mcp_relative());
     let command =
         crate::platform::command(binary.to_str().ok_or(ProbeFailure::Unavailable)?, &["mcp"])
             .map_err(|_| ProbeFailure::Unavailable)?;

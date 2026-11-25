@@ -56,7 +56,7 @@ pub(crate) fn setup_changes(
 ) -> Result<Vec<crate::file_transaction::Change>> {
     use crate::file_transaction::Change;
     let root = root.canonicalize()?;
-    let binary = crate::platform::project_cli(&root);
+    let binary = root.join(crate::platform::project_mcp_relative());
     crate::cli_guidance::preflight(&root)?;
     crate::cli_guidance::safe_target(&root, ".codex/config.toml")?;
     crate::cli_guidance::safe_target(&root, ".mcp.json")?;
@@ -101,7 +101,14 @@ pub(crate) fn setup_changes(
         ensure!(
             existing["command"].as_str().is_some_and(|v| {
                 let path = v.replace('\\', "/");
-                path.ends_with("/.miy-tools/miy") || path.ends_with("/.miy-tools/miy.exe")
+                path.ends_with("/.miy-tools/miy")
+                    || path.ends_with("/.miy-tools/miy.exe")
+                    || path
+                        .rsplit_once("/.miy-tools/mcp/")
+                        .is_some_and(|(_, rest)| {
+                            rest.strip_suffix("/miy.exe")
+                                .is_some_and(|v| crate::component_contract::version(v).is_ok())
+                        })
             }) && (existing["args"] == json!(["app", "mcp"]) || existing["args"] == json!(["mcp"])),
             "existing_claude_miy_app_config"
         );
@@ -119,6 +126,14 @@ pub(crate) fn setup_changes(
         std::fs::read(std::env::current_exe()?)?,
     );
     executable.executable = true;
+    if cfg!(windows) {
+        let mut adapter = Change::new(
+            crate::platform::project_mcp_relative(),
+            executable.bytes.clone(),
+        );
+        adapter.executable = true;
+        changes.push(adapter);
+    }
     changes.push(executable);
     // These files can also contain credentials for the user's other MCP servers.
     let mut codex = Change::new(".codex/config.toml", changed.into_bytes());
@@ -152,8 +167,12 @@ pub(crate) fn verify_setup(root: &Path) -> Result<Value> {
     ] {
         crate::cli_guidance::safe_target(&root, path)?;
     }
-    let binary = crate::platform::project_cli(&root);
-    ensure!(binary.is_file(), "project_cli_unavailable");
+    let binary = root.join(crate::platform::project_mcp_relative());
+    crate::cli_guidance::safe_target(&root, crate::platform::project_mcp_relative())?;
+    ensure!(
+        binary.is_file() && crate::platform::project_cli(&root).is_file(),
+        "project_cli_unavailable"
+    );
     let codex_path = root.join(".codex/config.toml");
     let claude_path = root.join(".mcp.json");
     ensure!(
@@ -426,7 +445,9 @@ mod configuration_tests {
         let root = temp.path().canonicalize().unwrap();
         std::fs::create_dir(root.join(".codex")).unwrap();
         std::fs::create_dir(root.join(".miy-tools")).unwrap();
-        let binary = crate::platform::project_cli(&root);
+        let binary = root.join(crate::platform::project_mcp_relative());
+        std::fs::create_dir_all(binary.parent().unwrap()).unwrap();
+        std::fs::write(crate::platform::project_cli(&root), []).unwrap();
         std::fs::write(&binary, []).unwrap();
         let codex = format!(
             "[mcp_servers.other]\ncommand = \"unrelated\"\n\n[mcp_servers.miy_app]\ncommand = {}\nargs = [\"mcp\"]\ncwd = {}\nrequired = true\n",

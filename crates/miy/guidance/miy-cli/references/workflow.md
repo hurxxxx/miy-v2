@@ -166,8 +166,8 @@ project; it does not invent a localhost address. Register/select the intended
 server before remote work. Registration and administrator approval are required
 before local preview can use an app's development permissions.
 
-With a matching 0.21.0 CLI and core, start local preview before the first dev
-deployment. A startup 403 on `/preview/apps/{app}/browser/context` means to check the
+With a matching 0.21.x CLI and core, start local preview before the first dev
+deployment. Starting with 0.21.1, preview checks project integrity and builds the preview runtime. Full tests, typecheck and API drift checks run in `miy app check` before publication. A startup 403 on `/preview/apps/{app}/browser/context` means to check the
 selected CLI identity, target app and dev grant. Directory access for an app
 feature requires the installed dev release to request and receive
 `platform:directory:read`. Request that permission only for a feature that uses

@@ -386,6 +386,19 @@ def check(cli):
         manifest = json.loads((project / "manifest.json").read_bytes())
         require(manifest["name"] == "한글 앱", "UTF-8 app identity was not preserved")
         run(["app", "setup"], cwd=project, command="app setup")
+        if os.name == "nt":
+            project_cli = project / ".miy-tools/miy.exe"
+            adapter = json.loads((project / ".mcp.json").read_bytes())["mcpServers"]["miy_app"]["command"]
+            require(Path(adapter) != project_cli.resolve(), "Windows MCP must have a separate binary")
+            with subprocess.Popen([adapter, "mcp"], cwd=project, env=env, stdin=subprocess.PIPE,
+                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as active:
+                try:
+                    project_cli.write_bytes(b"older-project-cli")
+                    run(["app", "setup"], cwd=project, command="app setup")
+                    require(active.poll() is None and project_cli.read_bytes() == cli.read_bytes(),
+                            "A connected project MCP must permit a tooling refresh")
+                finally:
+                    active.terminate()
         before = (project / "miy.cli.json").read_bytes()
         run(["app", "setup"], cwd=project, command="app setup")
         require((project / "miy.cli.json").read_bytes() == before, "Repeated setup changed its lock")

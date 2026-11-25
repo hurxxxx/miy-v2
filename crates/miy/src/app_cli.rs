@@ -225,7 +225,7 @@ pub(crate) async fn api_method(
 pub(crate) fn save(path: &str, value: &Value) -> Result<()> {
     crate::platform::write_private(Path::new(path), &serde_json::to_vec_pretty(value)?)
 }
-pub(crate) fn check() -> Result<Manifest> {
+pub(crate) fn check_project() -> Result<Manifest> {
     let m = manifest()?;
     crate::cli_error::validation(
         crate::app_harness::verify_api_files(Path::new("."), &m),
@@ -256,6 +256,10 @@ pub(crate) fn check() -> Result<Manifest> {
         bundle::migrations(Path::new("migrations")),
         "migration_contract_invalid",
     )?;
+    Ok(m)
+}
+pub(crate) fn check() -> Result<Manifest> {
+    let m = check_project()?;
     run("cargo", &["fmt", "--all", "--check"])?;
     run("cargo", &["test", "--locked"])?;
     run("pnpm", &["install", "--frozen-lockfile"])?;
@@ -555,7 +559,8 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
             )?;
             if harness_only {
                 return Ok(Outcome::Data(
-                    json!({"appId":m.id,"mode":"harness-only","guidance":guidance,"findings":findings}),
+                    json!({"appId":m.id,"mode":"harness-only","guidance":guidance,"findings":findings,
+                        "warnings": if guidance["setupRequired"] == true { vec!["app dev and full app check require current CLI guidance. Run the global miy app setup and restart the project MCP."] } else { vec![] }}),
                 ));
             }
             let mut checks = vec![

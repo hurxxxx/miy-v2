@@ -212,6 +212,32 @@ pub fn validation<T>(result: anyhow::Result<T>, code: &'static str) -> anyhow::R
     })
 }
 
+// Diagnostics use recognized platform routes. URLs, query strings, and
+// user-controlled path segments can contain credentials.
+fn preview_request_path(path: &str) -> Option<&str> {
+    let parts: Vec<_> = path.strip_prefix("/api/v1/")?.split('/').collect();
+    let known = match parts.as_slice() {
+        ["me" | "capabilities" | "app-registrations"] => true,
+        [
+            "preview",
+            "apps",
+            app,
+            "browser",
+            "context" | "start" | "exchange",
+        ]
+        | ["preview", "apps", app, "platform", "directory"]
+        | ["apps", app, "dev-sessions"] => crate::contract::valid_id(app),
+        ["apps", app, "dev-sessions", "by-request", id] => {
+            crate::contract::valid_id(app) && uuid::Uuid::parse_str(id).is_ok()
+        }
+        ["dev-sessions", id] | ["dev-sessions", id, "heartbeat"] => {
+            uuid::Uuid::parse_str(id).is_ok()
+        }
+        _ => false,
+    };
+    known.then_some(path)
+}
+
 /// Classify an HTTP failure before considering whether its body is valid JSON.
 pub async fn response(response: reqwest::Response) -> anyhow::Result<Value> {
     let status = response.status();
@@ -221,6 +247,7 @@ pub async fn response(response: reqwest::Response) -> anyhow::Result<Value> {
         .and_then(|value| value.to_str().ok())
         .and_then(safe_code)
         .map(str::to_owned);
+    let path = preview_request_path(response.url().path()).map(str::to_owned);
     let body = response.json::<Value>().await;
     if status.is_success() {
         return body.map_err(|_| {
@@ -234,6 +261,9 @@ pub async fn response(response: reqwest::Response) -> anyhow::Result<Value> {
     }
 
     let mut failure = http_failure(status);
+    if let Some(path) = path {
+        failure.details["path"] = json!(path);
+    }
     let body = body.ok();
     if let Some(code) = body
         .as_ref()
@@ -241,6 +271,9 @@ pub async fn response(response: reqwest::Response) -> anyhow::Result<Value> {
         .and_then(safe_code)
     {
         failure.code = code.into();
+        if code == "official_app_id_reserved" && status == reqwest::StatusCode::CONFLICT {
+            failure.message = "This app ID is reserved for an official MIY app. Choose a distinct organization app ID before registering.".into();
+        }
     }
     let request_id = header_request_id.or_else(|| {
         body.as_ref()
@@ -264,6 +297,29 @@ mod tests {
             .body(body.to_owned())
             .unwrap()
             .into()
+    }
+
+    #[tokio::test]
+    async fn reserved_app_conflict_has_actionable_guidance() {
+        let error = response(reply(
+            409,
+            r#"{"error":{"code":"official_app_id_reserved"}}"#,
+        ))
+        .await
+        .unwrap_err();
+        let failure = classify(&error);
+        assert_eq!(failure.code, "official_app_id_reserved");
+        assert!(failure.message.contains("official MIY app"));
+    }
+
+    #[test]
+    fn diagnostic_paths_only_identify_known_preview_operations() {
+        let path = "/api/v1/preview/apps/mfg-plm/browser/context";
+        assert_eq!(preview_request_path(path), Some(path));
+        assert!(preview_request_path("/api/v1/unknown/private-id").is_none());
+        assert!(
+            preview_request_path("/api/v1/preview/apps/invalid%20id/browser/context").is_none()
+        );
     }
 
     #[test]
