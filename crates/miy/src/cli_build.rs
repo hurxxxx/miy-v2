@@ -5,7 +5,7 @@ use crate::{
     cli_error::{Category, CliError},
     cli_output::{Outcome, OutputMode},
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -703,6 +703,13 @@ fn finish_or_pending(session: &Session, entry: Option<&Entry>, job: Value) -> Re
             .as_str()
             .and_then(crate::cli_error::safe_code)
             .unwrap_or("remote_build_failed");
+        if code == "docker_storage_low" {
+            let id = job_id(&job)?.to_string();
+            return Err(CliError::new(Category::RemoteFailure, code,
+                "The build server has insufficient disk space. Inspect the build logs and give the build ID to the platform operator. Once capacity is available, run app build on the same commit.")
+                .with_details(json!({"jobId":id,"requestId":job["requestId"],"sourceCommit":job["sourceCommit"]}))
+                .with_recovery("miy", &["--context", session.context.as_deref().context("context_required")?, "job", "logs", &id]).into());
+        }
         if let Some(entry) = entry {
             return Err(recovery(
                 entry,

@@ -678,6 +678,7 @@ mod tests {
             "Do not repeat registration or request `platform:directory:read`",
             "Deploy only with the user's authorization",
             "docker_storage_low",
+            "waiting_for_storage",
             "miy app source-pin",
             "miy app deploy --environment dev --dry-run",
             "miy job resume BUILD_ID --environment dev",

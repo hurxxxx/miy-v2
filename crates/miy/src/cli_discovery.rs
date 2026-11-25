@@ -668,7 +668,7 @@ fn behavior(command: &str) -> Value {
             json!({"server":"Uploads a filtered, clean committed source snapshot and builds it on the selected server. The server runs the format check, tests, type check and SDK/component/migration integrity checks, and only its builds can be deployed.",
                 "requirements":"Named context, login, approved app develop permission, Git and app.builds.v1; never invokes local Docker, Rust or pnpm. For local testing use app dev.",
                 "platform":"The image is built for the selected server's runtime platform.",
-                "recovery":"Use job resume ID after a lost acknowledgement or interrupted upload. After confirmed admission rejection or a terminal build failure, run app build again for a new attempt. The same commit can be reused.",
+                "recovery":"Use job resume ID after a lost acknowledgement or interrupted upload. While reclaiming_build_cache or waiting_for_storage, stay on the same build ID; the worker recovers automatically. For terminal docker_storage_low inspect job logs and wait for server capacity. After confirmed admission rejection or a terminal build failure, run app build again for a new attempt. The same commit can be reused.",
                 "result":"A successful build writes server-bound dist/build.json and dist/image.json; app deploy verifies the receipt and uses the server image directly.",
                 "observation":"--no-wait returns the accepted build; --timeout defaults to 1800 seconds. job get/watch/resume and job logs accept build IDs."})
         }

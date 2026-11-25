@@ -1172,6 +1172,15 @@ async fn durable_server_build_api() -> Result<()> {
     lost_upload_lock(&h, &actor)
         .await
         .context("upload connection loss")?;
+    h.finish_fixtures().await?;
+    let storage_request = Uuid::new_v4();
+    let payload = b"verified source retained across storage waits";
+    let build = id(&h.post(&actor, storage_request, payload).await?)?;
+    crate::server_build_worker::tests::storage_recovery(&pool, build).await?;
+    ensure!(id(&h.by_request(&actor, storage_request).await?)? == build);
+    ensure!(std::fs::read(server_build::archive_path(build)?)? == payload);
+    h.finish_fixtures().await?;
+    passed("automatic cache recovery, bounded same-ID storage wait and retained upload");
     permissions(&h, &actor)
         .await
         .context("permission boundaries")?;
@@ -1194,7 +1203,7 @@ async fn durable_server_build_api() -> Result<()> {
     catalog_admission(&h, &actor)
         .await
         .context("official app build admission")?;
-    let summary = json!({"passed":true,"suite":"server-build-api","storage":"owned disposable PostgreSQL","transport":"real loopback HTTP","groups":11,"dockerBuildExecuted":false,"runtimeJobsUnchanged":true});
+    let summary = json!({"passed":true,"suite":"server-build-api","storage":"owned disposable PostgreSQL","transport":"real loopback HTTP","groups":12,"dockerBuildExecuted":false,"runtimeJobsUnchanged":true});
     std::fs::write(
         root.join("summary.json"),
         serde_json::to_vec_pretty(&summary)?,

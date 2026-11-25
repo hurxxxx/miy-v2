@@ -465,12 +465,19 @@ def check(cli):
             pending = call(['--context', 'fixture', 'job', 'resume', request, '--no-wait'])['data']
             require(pending['status'] == 'queued', 'Timeout cancelled accepted build')
             count = len(state['uploads'])
-            state['jobs'][pending['id']].update(status='failed', errorCode='fixture_build_failed')
-            call(['--context', 'fixture', 'job', 'resume', request, '--no-wait'], expected=9)
+            state['jobs'][pending['id']].update(step='waiting_for_storage')
+            waiting = call(['--context', 'fixture', 'job', 'resume', request, '--no-wait'])['data']
+            require(waiting['id'] == pending['id'] and waiting['step'] == 'waiting_for_storage'
+                    and len(state['uploads']) == count, 'Storage wait resubmitted the source')
+            state['jobs'][pending['id']].update(status='failed', step='failed', errorCode='docker_storage_low')
+            failure = call(['--context', 'fixture', 'job', 'resume', request, '--no-wait'], expected=9)['error']
+            require(failure['code'] == 'docker_storage_low' and failure['details']['jobId'] == pending['id']
+                    and failure['recovery']['args'] == ['--context', 'fixture', 'job', 'logs', pending['id']],
+                    'Terminal storage failure did not identify the server build logs')
             require(len(state['uploads']) == count, 'Resuming terminal failure started another build')
             call(['--context', 'fixture', 'app', 'build', '--no-wait'])
             require(len(state['uploads']) == count + 1 and state['uploads'][-1][0] != request, 'Explicit new build reused failed request')
-            ok('timeout preserves remote work; terminal failure resumes without rebuilding; explicit build starts new attempt')
+            ok('timeout and storage wait preserve one upload; exhausted storage points to server logs; explicit build starts a new attempt')
 
             change_source('receiving fixture')
             state['next_status'] = 'receiving'

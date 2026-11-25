@@ -19,6 +19,31 @@ pub(crate) struct Usage {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct Shortage {
+    pub(crate) total: u64,
+    pub(crate) available: u64,
+    pub(crate) required: u64,
+}
+
+impl Shortage {
+    pub(crate) fn summary(&self) -> String {
+        format!(
+            "Docker storage: {} bytes available, {} required, {} short.",
+            self.available,
+            self.required,
+            self.required - self.available
+        )
+    }
+}
+
+impl std::fmt::Display for Shortage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(FailureCode::DockerStorageLow.as_str())
+    }
+}
+impl std::error::Error for Shortage {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct Floor {
     min_free_bytes: u64,
     min_free_percent: u64,
@@ -48,12 +73,22 @@ impl Floor {
         self.min_free_bytes == 0 && self.min_free_percent == 0
     }
 
-    fn allows(self, usage: Usage) -> bool {
-        usage.total > 0
-            && usage.available <= usage.total
-            && usage.available >= self.min_free_bytes
-            && u128::from(usage.available) * 100
-                >= u128::from(usage.total) * u128::from(self.min_free_percent)
+    fn check_usage(self, usage: Usage) -> Result<()> {
+        anyhow::ensure!(
+            usage.total > 0 && usage.available <= usage.total,
+            RuntimeFailure::new(FailureCode::DockerStorageUnknown)
+        );
+        let percent = (u128::from(usage.total) * u128::from(self.min_free_percent)).div_ceil(100);
+        let required = self.min_free_bytes.max(percent as u64);
+        anyhow::ensure!(
+            usage.available >= required,
+            Shortage {
+                total: usage.total,
+                available: usage.available,
+                required
+            }
+        );
+        Ok(())
     }
 }
 
@@ -79,14 +114,13 @@ fn parse_df(output: &str) -> Option<Usage> {
         .then_some(Usage { total, available })
 }
 
-async fn measure() -> Result<Usage> {
+async fn measure(root: &str) -> Result<Usage> {
     let unknown = || RuntimeFailure::new(FailureCode::DockerStorageUnknown);
-    let root = crate::docker::docker(&["info", "--format", "{{.DockerRootDir}}"]).await?;
     if !root.starts_with('/') || root.contains('\n') {
         return Err(unknown().into());
     }
     let output = tokio::process::Command::new("df")
-        .args(["--output=size,avail", "-B1", root.as_str()])
+        .args(["--output=size,avail", "-B1", root])
         .stdin(std::process::Stdio::null())
         .output()
         .await
@@ -98,24 +132,15 @@ async fn measure() -> Result<Usage> {
 }
 
 /// Refuses work that adds images when the Docker data root is below the floor.
-pub(crate) async fn preflight() -> Result<()> {
-    check(Floor::from_env()?).await
-}
-
-async fn check(floor: Floor) -> Result<()> {
+pub(crate) async fn preflight(data_root: impl AsyncFnOnce() -> Result<String>) -> Result<()> {
+    let floor = Floor::from_env()?;
     if floor.disabled() {
         return Ok(());
     }
-    let usage = measure().await?;
-    if floor.allows(usage) {
-        return Ok(());
-    }
-    tracing::warn!(
-        event = "docker_storage_low",
-        available_bytes = usage.available,
-        total_bytes = usage.total
-    );
-    Err(RuntimeFailure::new(FailureCode::DockerStorageLow).into())
+    let root = data_root()
+        .await
+        .map_err(|_| RuntimeFailure::new(FailureCode::DockerStorageUnknown))?;
+    floor.check_usage(measure(&root).await?)
 }
 
 #[cfg(test)]
@@ -132,18 +157,40 @@ mod tests {
     #[test]
     fn floor_needs_both_bytes_and_percent() {
         let floor = Floor::new(15, 15).unwrap();
-        assert!(floor.allows(usage(100, 15)));
-        assert!(!floor.allows(usage(100, 14)), "15% but below 15 GiB");
-        assert!(floor.allows(usage(937, 227)));
-        assert!(!floor.allows(usage(937, 140)), "15 GiB free but below 15%");
-        assert!(!floor.allows(Usage {
-            total: 0,
-            available: 0
-        }));
-        assert!(!floor.allows(Usage {
-            total: 1,
-            available: 2
-        }));
+        assert!(floor.check_usage(usage(100, 15)).is_ok());
+        assert!(
+            floor.check_usage(usage(100, 14)).is_err(),
+            "15% but below 15 GiB"
+        );
+        assert!(floor.check_usage(usage(937, 227)).is_ok());
+        assert!(
+            floor.check_usage(usage(937, 140)).is_err(),
+            "15 GiB free but below 15%"
+        );
+        for usage in [
+            Usage {
+                total: 0,
+                available: 0,
+            },
+            Usage {
+                total: 1,
+                available: 2,
+            },
+        ] {
+            let error = floor.check_usage(usage).unwrap_err();
+            assert_eq!(
+                crate::runtime_contract::classify_failure(&error).code,
+                FailureCode::DockerStorageUnknown
+            );
+        }
+        let error = Floor::new(0, 15)
+            .unwrap()
+            .check_usage(Usage {
+                total: 101,
+                available: 15,
+            })
+            .unwrap_err();
+        assert_eq!(error.downcast_ref::<Shortage>().unwrap().required, 16);
         assert!(!floor.disabled());
         assert!(Floor::new(0, 0).unwrap().disabled());
         assert!(Floor::new(0, 101).is_err());
@@ -167,13 +214,12 @@ mod tests {
     #[tokio::test]
     #[ignore = "needs a local Docker daemon"]
     async fn the_real_docker_root_is_measured_and_a_full_floor_refuses() {
-        let usage = measure().await.unwrap();
-        assert!(usage.total > 0 && usage.available <= usage.total);
-        assert!(check(Floor::new(0, 0).unwrap()).await.is_ok());
-        let refused = check(Floor::new(0, 100).unwrap()).await.unwrap_err();
-        assert_eq!(
-            crate::runtime_contract::classify_failure(&refused).code,
-            FailureCode::DockerStorageLow
-        );
+        let root = crate::docker::docker(&["info", "--format", "{{.DockerRootDir}}"])
+            .await
+            .unwrap();
+        let usage = measure(&root).await.unwrap();
+        assert!(usage.total > 0 && usage.available < usage.total);
+        let refused = Floor::new(0, 100).unwrap().check_usage(usage).unwrap_err();
+        assert!(refused.is::<Shortage>());
     }
 }

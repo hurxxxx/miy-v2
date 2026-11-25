@@ -310,4 +310,6 @@ and `deploy --environment prod` are invalid; use `job retry` and `app promote`.
 
 `context list --limit/--cursor` pages the local context map and restarts when configuration changes. `component list` returns `{components,nextCursor}`; it retrieves the complete authenticated catalog before paging locally. Fields such as `components.name` and `contexts.work-prod.origin` select keys from the authorized result.
 
+For server build steps `reclaiming_build_cache` and `waiting_for_storage`, keep the accepted job ID. The worker rechecks automatically. After a disconnect use `miy job resume BUILD_ID --environment dev`. For a terminal `docker_storage_low`, inspect `miy job logs BUILD_ID` and report the shortfall to the platform operator. Submit the same commit again once capacity is available.
+
 Local development defaults to native Rust plus the built React preview and an in-process tunnel to the server dev DB. Docker Desktop, WSL and local PostgreSQL are not needed for `app dev` or `doctor --for develop`. Explicit `--runtime docker` selects the container workflow for local testing only. `app build` always builds on the selected server's Linux Docker engine with the existing login; no client needs local Docker or SSH, and only a server build can be deployed. A local preview, native or Docker, is not a releasable image.

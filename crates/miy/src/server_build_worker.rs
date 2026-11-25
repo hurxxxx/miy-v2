@@ -113,6 +113,7 @@ fn docker_command(control: &Path, args: &[String]) -> Command {
 }
 
 enum Output {
+    Discard,
     Capture,
     Log,
     Archive(PathBuf),
@@ -181,7 +182,7 @@ async fn docker(
                             .write_all(bytes)
                             .await?;
                     }
-                    Output::Log => {}
+                    Output::Log | Output::Discard => {}
                 }
             }
             if matches!(output, Output::Log) && logged < LOG_LIMIT {
@@ -370,6 +371,96 @@ async fn step(pool: &sqlx::PgPool, id: Uuid, name: &str) -> Result<()> {
     Ok(())
 }
 
+// Both steps are persisted before Docker build starts. Only these running jobs
+// may resume compilation after a worker restart without a completed image.
+fn storage_recovery_started(row: &PgRow) -> bool {
+    matches!(
+        row.get::<&str, _>("step"),
+        "reclaiming_build_cache" | "waiting_for_storage"
+    )
+}
+
+async fn check_build_storage(pool: &sqlx::PgPool, id: Uuid, control: &Path) -> Result<()> {
+    crate::docker_storage::preflight(async || {
+        let root = docker(
+            pool,
+            id,
+            control,
+            &args(&["info", "--format", "{{.DockerRootDir}}"]),
+            30,
+            Output::Capture,
+        )
+        .await?;
+        Ok(String::from_utf8(root)?.trim_end().to_owned())
+    })
+    .await
+}
+
+async fn reclaim_build_cache(
+    pool: &sqlx::PgPool,
+    id: Uuid,
+    control: &Path,
+    required: u64,
+) -> Result<()> {
+    // Use the same default local builder and sanitized Docker config as the build.
+    let args = args(&[
+        "buildx",
+        "prune",
+        "--builder",
+        "default",
+        "--force",
+        "--min-free-space",
+        &format!("{required}B"),
+    ]);
+    docker(pool, id, control, &args, 90, Output::Discard).await?;
+    Ok(())
+}
+
+async fn prepare_build_storage(
+    pool: &sqlx::PgPool,
+    row: &PgRow,
+    check: impl AsyncFn() -> Result<()>,
+    reclaim: impl AsyncFnOnce(u64) -> Result<()>,
+) -> Result<()> {
+    let Err(error) = check().await else {
+        return Ok(());
+    };
+    let Some(shortage) = error.downcast_ref::<crate::docker_storage::Shortage>() else {
+        return Err(error);
+    };
+    if storage_recovery_started(row) {
+        return Err(error);
+    }
+    let id = row.get("id");
+    let other_waiter: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM app_builds WHERE id<>$1 AND status='queued' AND step='waiting_for_storage' AND started_at>now()-interval '15 minutes')")
+        .bind(id).fetch_one(pool).await?;
+    if other_waiter {
+        return Err(error);
+    }
+    recheck(pool, row, row.get("app_id")).await?;
+    tracing::warn!(event="docker_storage_low", build_id=%id, available_bytes=shortage.available,
+        total_bytes=shortage.total, required_bytes=shortage.required);
+    step(pool, id, "reclaiming_build_cache").await?;
+    server_build::append_log(
+        pool,
+        id,
+        &format!(
+            "{} Reclaiming unused server build cache.\n",
+            shortage.summary()
+        ),
+    )
+    .await?;
+    if reclaim(shortage.required).await.is_err() {
+        server_build::append_log(
+            pool,
+            id,
+            "Build cache cleanup did not complete. Rechecking server storage.\n",
+        )
+        .await?;
+    }
+    check().await
+}
+
 async fn execute(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<(String, String)> {
     let id: Uuid = row.get("id");
     let app: String = row.get("app_id");
@@ -380,14 +471,21 @@ async fn execute(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<(
                 == Some(row.get::<String, _>("platform").as_str()),
         "build_platform_mismatch"
     );
+    let storage_retry = storage_recovery_started(row);
     let directory = work(id)?;
     let control = directory.join("control");
     tokio::fs::create_dir_all(control.join("docker")).await?;
     tokio::fs::write(control.join("docker/config.json"), b"{}\n").await?;
+    if storage_retry {
+        // Waiting polls check the grant and disk before extracting the source again.
+        check_build_storage(pool, id, &control).await?;
+    }
     let scratch = ExecutionScratch::create(&server_build::root()?, id)?;
     let context = scratch.path.join("source");
     let archive = server_build::archive_path(id)?;
-    step(pool, id, "validating_source").await?;
+    if !storage_retry {
+        step(pool, id, "validating_source").await?;
+    }
     let check_archive = archive.clone();
     let check_context = context.clone();
     let check_app = app.clone();
@@ -429,7 +527,7 @@ async fn execute(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<(
     let build = json!({"bundleVersion":bundle::VERSION,"sourceCommit":row.get::<String,_>("source_commit"),"sourceArchiveHash":row.get::<String,_>("archive_hash"),"appId":app,"version":manifest.version});
     let iid = control.join("image.iid");
     let unique_tag = tag(id);
-    let image = if recovering {
+    let image = if recovering && !storage_retry {
         // A disconnected BuildKit request is never restarted automatically.
         // A finished image can be recovered using immutable ID or job-only tag.
         let candidate = tokio::fs::read_to_string(&iid)
@@ -451,7 +549,14 @@ async fn execute(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<(
         tokio::fs::write(control.join("Dockerfile"), RECIPE).await?;
         let _ = tokio::fs::remove_file(&iid).await;
         // A build pulls base images and grows the build cache on the Docker data root.
-        crate::docker_storage::preflight().await?;
+        prepare_build_storage(
+            pool,
+            row,
+            async || check_build_storage(pool, id, &control).await,
+            async |required| reclaim_build_cache(pool, id, &control, required).await,
+        )
+        .await?;
+        recheck(pool, row, &app).await?;
         step(pool, id, "building").await?;
         server_build::append_log(pool,id,"Building with the verified worker recipe; application checks run inside offline Docker stages.\n").await?;
         let command = vec![
@@ -651,9 +756,29 @@ fn failure_code(error: &anyhow::Error, recovering: bool) -> &'static str {
     }
 }
 
+async fn defer_for_storage(
+    pool: &sqlx::PgPool,
+    row: &PgRow,
+    shortage: &crate::docker_storage::Shortage,
+) -> Result<bool> {
+    let id: Uuid = row.get("id");
+    let deferred = sqlx::query("UPDATE app_builds SET status='queued',step='waiting_for_storage',updated_at=clock_timestamp()
+         WHERE id=$1 AND status='running' AND started_at > clock_timestamp()-interval '15 minutes'")
+        .bind(id).execute(pool).await?.rows_affected() == 1;
+    if !deferred || row.get::<&str, _>("step") != "waiting_for_storage" {
+        let next = if deferred {
+            "The worker will recheck automatically under this build ID."
+        } else {
+            "Server capacity needs operator attention."
+        };
+        server_build::append_log(pool, id, &format!("{} {next}\n", shortage.summary())).await?;
+    }
+    Ok(deferred)
+}
+
 async fn finish(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<()> {
     let id: Uuid = row.get("id");
-    let result = async {
+    let result: Result<_> = async {
         let image = execute(pool, row, recovering).await?;
         crate::release_source::retain_build(&server_build::archive_path(id)?, row)
             .await
@@ -669,6 +794,12 @@ async fn finish(pool: &sqlx::PgPool, row: &PgRow, recovering: bool) -> Result<()
             server_build::append_log(pool,id,"Build succeeded; the immutable image is ready for a separate development deployment.\n").await?;
         }
         Err(error) => {
+            if let Some(shortage) = error.downcast_ref::<crate::docker_storage::Shortage>()
+                && defer_for_storage(pool, row, shortage).await?
+            {
+                // The durable request still owns the uploaded archive.
+                return Ok(());
+            }
             let code = failure_code(&error, recovering);
             server_build::append_log(
                 pool,
@@ -758,14 +889,101 @@ pub async fn tick(pool: &sqlx::PgPool) -> Result<bool> {
             tx.commit().await?;
         }
     }
-    let Some(row) = sqlx::query("UPDATE app_builds SET status='running',step='validating_source',started_at=now(),updated_at=now() WHERE id=(SELECT id FROM app_builds WHERE status='queued' ORDER BY created_at,id LIMIT 1) AND status='queued' RETURNING *").fetch_optional(pool).await? else { return Ok(false); };
+    let Some(row) = claim_build(pool).await? else {
+        return Ok(false);
+    };
     finish(pool, &row, false).await?;
     Ok(true)
 }
 
+async fn claim_build(pool: &sqlx::PgPool) -> Result<Option<PgRow>> {
+    Ok(sqlx::query(
+        "UPDATE app_builds SET status='running',
+        step=CASE WHEN step='waiting_for_storage' THEN step ELSE 'validating_source' END,
+        started_at=COALESCE(started_at,clock_timestamp()),updated_at=clock_timestamp()
+        WHERE id=(SELECT id FROM app_builds WHERE status='queued'
+            AND (step<>'waiting_for_storage' OR updated_at<=clock_timestamp()-interval '30 seconds')
+            ORDER BY created_at,id LIMIT 1) AND status='queued' RETURNING *",
+    )
+    .fetch_optional(pool)
+    .await?)
+}
+
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    // Exercised by the isolated PostgreSQL/HTTP build test. Only the disk probe and
+    // the cache collector are simulated. The claim, defer and recovery state is real.
+    pub(crate) async fn storage_recovery(pool: &sqlx::PgPool, id: Uuid) -> Result<()> {
+        use crate::docker_storage::Shortage;
+        use std::cell::Cell;
+
+        let row = claim_build(pool).await?.context("expected queued build")?;
+        ensure!(row.get::<Uuid, _>("id") == id);
+        let shortage = Shortage {
+            total: 100,
+            available: 13,
+            required: 15,
+        };
+        let attempts = Cell::new(0);
+        prepare_build_storage(
+            pool,
+            &row,
+            async || {
+                if attempts.get() == 0 {
+                    Err(shortage.into())
+                } else {
+                    Ok(())
+                }
+            },
+            async |target| {
+                ensure!(target == 15);
+                attempts.set(attempts.get() + 1);
+                Ok(())
+            },
+        )
+        .await?;
+        ensure!(attempts.get() == 1);
+        let recovering = sqlx::query("SELECT * FROM app_builds WHERE id=$1")
+            .bind(id)
+            .fetch_one(pool)
+            .await?;
+        ensure!(storage_recovery_started(&recovering));
+        let never_prune = async |_: u64| -> Result<()> { panic!("repeated cache cleanup") };
+        prepare_build_storage(pool, &recovering, async || Ok(()), never_prune).await?;
+        let error = prepare_build_storage(
+            pool,
+            &recovering,
+            async || Err(shortage.into()),
+            never_prune,
+        )
+        .await
+        .unwrap_err();
+        ensure!(error.is::<Shortage>());
+        ensure!(defer_for_storage(pool, &recovering, &shortage).await?);
+        ensure!(claim_build(pool).await?.is_none());
+        sqlx::query("UPDATE app_builds SET updated_at=now()-interval '31 seconds' WHERE id=$1")
+            .bind(id)
+            .execute(pool)
+            .await?;
+        let retry = claim_build(pool).await?.context("missing storage retry")?;
+        ensure!(
+            retry.get::<Uuid, _>("id") == id
+                && retry.get::<&str, _>("step") == "waiting_for_storage"
+        );
+        ensure!(
+            retry.get::<chrono::DateTime<chrono::Utc>, _>("started_at")
+                == row.get::<chrono::DateTime<chrono::Utc>, _>("started_at")
+        );
+        sqlx::query("UPDATE app_builds SET started_at=now()-interval '16 minutes' WHERE id=$1")
+            .bind(id)
+            .execute(pool)
+            .await?;
+        ensure!(!defer_for_storage(pool, &retry, &shortage).await?);
+        ensure!(failure_code(&error, true) == "docker_storage_low");
+        Ok(())
+    }
 
     /// The queued recheck's codes survive into the build record; an unreadable
     /// recheck is not reported as a revocation.
