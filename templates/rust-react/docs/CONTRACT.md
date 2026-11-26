@@ -183,7 +183,7 @@ is marked unstructured. Neither format automatically proves business correctness
 
 ### Testing and auditing installation stewardship
 
-A local preview, a delegated call, and a platform callback have no pending offer. Render application roles independently of the acceptance button. A real lookup failure from the deployed frame is an error. SDK 0.7 adds `apply_steward_assignment_with(pool, async |conn, assignment_id| { /* insert app audit event */ Ok(()) })`. The callback runs once in the local role and receipt transaction. A failed audit rolls it back. The assignment ID correlates the app audit with the console nomination, actor, reason and applied time.
+A local preview, a delegated call, and a platform callback have no pending offer. Render application roles independently of the acceptance button. A real lookup failure from the deployed frame is an error. SDK 0.7 adds `apply_steward_assignment_with(pool, async |conn, assignment_id| { /* insert app audit event */ Ok(()) })`. SDK 0.7.1 supports this inline callback and the default acceptance method in an Axum handler. The callback runs once in the local role and receipt transaction. A failed audit rolls it back. The assignment ID correlates the app audit with the console nomination, actor, reason and applied time.
 
 Run `python sdk/testing/stewards.py` with Docker, the project Rust toolchain and fetched dependencies to rehearse initial acceptance, transaction rollback, handover and receipt retry in disposable PostgreSQL. It starts a local Core fixture and discards its test roster. For a full portal acceptance test use a separately registered dev test app with an empty roster.
 

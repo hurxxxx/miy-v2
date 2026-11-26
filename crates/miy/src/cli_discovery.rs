@@ -842,6 +842,13 @@ fn policy(command: &str, group: bool) -> Policy {
                 "Explicit anonymous support report submission; administrator-only reading and triage. Repeated IDs with identical content do not create duplicates.",
             ];
         }
+        "report result" => {
+            policy.source = "crates/miy/src/cli_report.rs";
+            policy.permissions = "The saved submission in the original private CLI outbox.";
+            policy.local_effects = &["Reads the receipt and its original server address."];
+            policy.remote_effects =
+                &["Reads the report status and the result shared by the triaging administrator."];
+        }
         "report list" | "report show" => {
             policy.source = "crates/miy/src/cli_report.rs";
             policy.local_effects = &["Reads the private local report outbox."];

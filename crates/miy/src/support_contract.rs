@@ -2,6 +2,8 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub const RECEIPT_HEADER: &str = "x-miy-report-key";
+
 pub const MAX_BODY: usize = 256 * 1024;
 pub const MAX_MESSAGE: usize = 32_000;
 

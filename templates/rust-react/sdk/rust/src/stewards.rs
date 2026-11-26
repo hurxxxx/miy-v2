@@ -17,6 +17,10 @@ fn db(_: sqlx::Error) -> CallError {
     call_error("steward_database_unavailable")
 }
 
+async fn no_audit(_: &mut PgConnection, _: &str) -> Result<(), sqlx::Error> {
+    Ok(())
+}
+
 impl Identity {
     /// Check the verified user inside the transaction that changes app administrators.
     pub async fn is_installation_steward_in(
@@ -65,8 +69,7 @@ impl Identity {
     /// Call on a user-initiated app write. True means this assignment was applied or
     /// acknowledged on retry. Check the current local role to authorize subsequent work.
     pub async fn apply_steward_assignment(&self, pool: &PgPool) -> Result<bool, CallError> {
-        self.apply_steward_assignment_with(pool, async |_, _| Ok(()))
-            .await
+        self.apply_steward_assignment_with(pool, no_audit).await
     }
 
     /// Run app audit SQL on the same connection as the new role and receipt.
@@ -77,7 +80,10 @@ impl Identity {
         audit: F,
     ) -> Result<bool, CallError>
     where
-        F: for<'a> AsyncFnOnce(&'a mut PgConnection, &'a str) -> Result<(), sqlx::Error>,
+        F: for<'conn, 'id> AsyncFnOnce(
+            &'conn mut PgConnection,
+            &'id str,
+        ) -> Result<(), sqlx::Error>,
     {
         let installation = &self.context.installation_id;
         let environment = self
@@ -141,5 +147,36 @@ impl Identity {
         )
         .await?;
         Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{Extension, Router, extract::State, routing::post};
+
+    // Router registration also checks the handler's Send future, as an app does.
+    #[test]
+    fn both_steward_apis_work_in_axum_handlers() {
+        async fn accept(State(pool): State<PgPool>, Extension(user): Extension<Identity>) {
+            let _ = user.apply_steward_assignment(&pool).await;
+        }
+        async fn accept_with_audit(
+            State(pool): State<PgPool>,
+            Extension(user): Extension<Identity>,
+        ) {
+            let _ = user
+                .apply_steward_assignment_with(&pool, async |conn, id| {
+                    sqlx::query("SELECT $1::text")
+                        .bind(id)
+                        .execute(conn)
+                        .await?;
+                    Ok(())
+                })
+                .await;
+        }
+        let _: Router<PgPool> = Router::new()
+            .route("/accept", post(accept))
+            .route("/accept-audit", post(accept_with_audit));
     }
 }

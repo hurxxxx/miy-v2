@@ -534,7 +534,9 @@
     "number": "Report ID:",
     "diagnostics": "Diagnostics",
     "handle": "Handle report {{id}}",
-    "note": "Investigation and resolution note",
+    "note": "Internal administrator note",
+    "resultTooLong": "The result can contain up to 32,000 characters.",
+    "result": "Action result shared with the submitter",
     "save": "Save",
     "more": "Load older reports"
   },

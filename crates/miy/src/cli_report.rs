@@ -45,6 +45,8 @@ pub enum ReportCommand {
     },
     /// Resend one saved report to its original server, without authentication.
     Retry { id: Uuid },
+    /// Read the processing status and submitter-facing result using the saved private receipt.
+    Result { id: Uuid },
     /// List locally saved reports and submission state.
     List,
     /// Inspect a locally saved redacted report.
@@ -58,6 +60,8 @@ struct Saved {
     origin: String,
     ca_file: Option<PathBuf>,
     sent: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    result_key: Option<Uuid>,
 }
 
 fn directory(override_path: Option<&Path>) -> Result<PathBuf> {
@@ -243,6 +247,7 @@ pub async fn execute(command: ReportCommand, outbox: Option<PathBuf>) -> Result<
                 origin,
                 ca_file,
                 sent: false,
+                result_key: Some(Uuid::new_v4()),
             };
             crate::platform::write_private(&path, &serde_json::to_vec(&saved)?)?;
             if save_only {
@@ -250,12 +255,30 @@ pub async fn execute(command: ReportCommand, outbox: Option<PathBuf>) -> Result<
             }
             send(&mut saved, &path, outbox.as_deref()).await
         }
-        ReportCommand::Retry { id } => {
+        ReportCommand::Retry { id } | ReportCommand::Result { id } => {
             let path = directory(outbox.as_deref())?.join(format!("{id}.json"));
             let mut saved: Saved = read(&path)?;
             saved.report.validate().map_err(invalid_report)?;
             if saved.report.id != id || crate::cli_client::origin(&saved.origin)? != saved.origin {
                 return Err(invalid_report("invalid_saved_report").into());
+            }
+            if matches!(command, ReportCommand::Result { .. }) {
+                let value = request(&saved, "/api/v1/support/reports/result").await?;
+                if value["id"] != id.to_string()
+                    || !matches!(
+                        value["status"].as_str(),
+                        Some("open" | "investigating" | "resolved" | "closed")
+                    )
+                    || !value["result"].is_string()
+                {
+                    return Err(CliError::new(
+                        Category::Network,
+                        "invalid_report_result",
+                        "The server returned an invalid report result.",
+                    )
+                    .into());
+                }
+                return Ok(json!({"id":id,"status":value["status"],"result":value["result"]}));
             }
             send(&mut saved, &path, outbox.as_deref()).await
         }
@@ -284,15 +307,20 @@ pub async fn execute(command: ReportCommand, outbox: Option<PathBuf>) -> Result<
     }
 }
 
+async fn request(saved: &Saved, endpoint: &str) -> Result<Value> {
+    let mut request = crate::cli_client::client(saved.ca_file.as_deref(), 15)?
+        .post(format!("{}{endpoint}", saved.origin))
+        .json(&saved.report);
+    if let Some(key) = saved.result_key {
+        request = request.header(crate::support_contract::RECEIPT_HEADER, key.to_string());
+    }
+    let response = request.send().await.map_err(crate::cli_error::transport)?;
+    crate::cli_error::response(response).await
+}
+
 async fn send(saved: &mut Saved, path: &Path, outbox: Option<&Path>) -> Result<Value> {
     let submitted = async {
-        let response = crate::cli_client::client(saved.ca_file.as_deref(), 15)?
-            .post(format!("{}/api/v1/support/reports", saved.origin))
-            .json(&saved.report)
-            .send()
-            .await
-            .map_err(crate::cli_error::transport)?;
-        let value = crate::cli_error::response(response).await?;
+        let value = request(saved, "/api/v1/support/reports").await?;
         if value["id"] != saved.report.id.to_string() || value["status"] != "received" {
             return Err(CliError::new(
                 Category::Network,
@@ -322,5 +350,13 @@ async fn send(saved: &mut Saved, path: &Path, outbox: Option<&Path>) -> Result<V
     }
     saved.sent = true;
     let updated = crate::platform::write_private(path, &serde_json::to_vec(saved)?).is_ok();
-    Ok(json!({"status":"received","id":saved.report.id,"file":path,"localReceiptSaved":updated}))
+    let mut args = vec!["report".to_owned()];
+    if let Some(outbox) = outbox {
+        args.extend(["--outbox".into(), outbox.to_string_lossy().into_owned()]);
+    }
+    args.extend(["result".into(), saved.report.id.to_string()]);
+    Ok(
+        json!({"status":"received","id":saved.report.id,"file":path,"localReceiptSaved":updated,
+        "resultCommand":{"executable":"miy","args":args}}),
+    )
 }

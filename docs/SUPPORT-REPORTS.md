@@ -17,6 +17,7 @@ miy report send --message "문제 설명" --dry-run
 miy report send --message "문제 설명" --save-only
 miy report list
 miy report show <신고-UUID>
+miy report result <신고-UUID>
 miy report retry <신고-UUID>
 ```
 
@@ -35,12 +36,14 @@ miy report --outbox "$HOME/miy-reports" retry <신고-UUID>
 
 설명과 관리자 메모에서 알려진 비밀 표시가 있는 줄을 가리지만, 임의의 비밀을 모두 탐지한다고 보장하지 않는다. 원문 로그·파일을 자동 첨부하지 않는 이유다. Unix 보관 폴더/파일은 0700/0600이며, Windows 파일은 기존 private-file ACL 함수를 사용한다.
 
+0.24.0부터 신고를 보낸 환경에서 `miy report result <신고-UUID>`로 현재 처리 상태와 관리자가 제보자에게 작성한 조치 결과를 읽는다. 전송 응답의 `resultCommand`도 같은 조회를 실행한다. 게시 전에는 결과가 빈 문자열이다. 조회에는 해당 신고를 저장한 outbox가 필요하다. 0.23.0까지의 신고는 보관된 접수 내용 전체를 대조한다. 새 신고는 outbox의 무작위 조회 키도 확인한다. 키는 서버에 해시로 보관한다.
+
 ## 서버와 관리자
 
-- 업무 포털의 `POST /api/v1/support/reports`만 비로그인 접수를 허용한다. bearer·cookie로 사용자를 식별하지 않으며 인증 실패 상태의 클라이언트도 접수할 수 있다. dev·console listener와 브라우저 Origin/Fetch Metadata 요청은 이 접수 경로를 사용할 수 없다.
-- 입력은 버전이 있는 구조화 JSON이며 미정의 필드를 거부한다. 요청은 16KiB, 설명은 4,000자까지다. UUID v4는 클라이언트가 생성하고 같은 ID의 다른 내용은 409로 거부한다. 응답은 ID와 접수 상태만 반환하며 기존 신고의 내용·처리 상태를 공개하지 않는다.
+- 업무 포털은 `POST /api/v1/support/reports`로 비로그인 접수, `POST /api/v1/support/reports/result`로 개별 접수 기록 확인 후 결과 조회를 제공한다. bearer·cookie로 사용자를 식별하지 않으며 인증 실패 상태의 클라이언트도 접수할 수 있다. dev·console listener와 브라우저 Origin/Fetch Metadata 요청은 이 접수 경로를 사용할 수 없다.
+- 입력은 버전이 있는 구조화 JSON이며 미정의 필드를 거부한다. 요청은 256KiB, 설명은 유니코드 문자 32,000자까지다. 긴 본문은 `miy report send --message-file feedback.txt`로 UTF-8 파일에서 읽고, 이어 보내는 리포트에는 `--thread-id 최초신고UUID`를 지정한다. UUID v4는 클라이언트가 생성하고 같은 ID의 다른 내용은 409로 거부한다. 접수 응답은 ID와 접수 상태를 반환한다. 결과 조회 응답에는 해당 신고의 ID·처리 상태·제보자용 결과만 담는다.
 - `support_reports`가 정본이다. 여러 서버 프로세스가 PostgreSQL advisory lock으로 접수를 직렬화하며 동시 경합·시간당 신규 120건·총 20,000건 한도는 429로 거부한다. 한도는 전체 설치에 적용하며 IP별 제한이 아니다. 임의의 forwarded 헤더를 신뢰하거나 IP를 저장하지 않는다. 접수 제한 시 CLI 로컬 파일에서 나중에 재전송한다.
-- 콘솔의 **플랫폼 관리 → 고장 신고 → 신고 조회**에서 목록·진단·설명을 확인하고 접수/조사 중/해결/종료와 메모를 저장한다. 목록은 50건 단위로 이어서 읽고 상태로 필터링한다.
+- 콘솔의 **플랫폼 관리 → 고장 신고 → 신고 조회**에서 목록·진단·설명을 확인하고 접수/조사 중/해결/종료, 내부 메모, 제보자에게 표시할 조치 결과를 저장한다. 조치 결과는 유니코드 32,000자까지이며 확인한 버전과 적용 방법을 적는다. 기존 메모는 내부용으로 보존한다. 목록은 50건 단위로 이어서 읽고 상태로 필터링한다.
 - `GET /api/v1/support/reports`와 `PATCH /api/v1/support/reports/{id}`는 현재 활성 관리자만 허용한다. 콘솔 쿠키는 CSRF 검사를 거치며 관리 CLI bearer는 기존 업무 포털 경계를 사용한다. 일반 사용자·dev/업무 포털 쿠키·위임 토큰은 신고 내용을 읽거나 수정할 수 없다. 변경 시 트랜잭션 안에서 관리자 권한을 재확인하며 revision 충돌은 409다. 감사에는 신고 ID와 상태만 기록한다.
 - 익명 신고는 제출자가 제공한 미확인 정보다. 계정 신원·진단의 진실성·에이전트 실행 지시로 신뢰하지 않는다. 화면은 텍스트로 렌더링하며 신고의 코드·명령·링크를 자동 실행하지 않는다.
 

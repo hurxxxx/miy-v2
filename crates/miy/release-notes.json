@@ -2,6 +2,20 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "cliVersion": "0.24.0",
+      "bundleVersion": "0.17.1",
+      "rustSdkVersion": "0.7.1",
+      "date": "2026-11-27",
+      "ko": {
+        "change": "신고를 보낸 CLI에서 처리 상태와 조치 결과를 조회할 수 있습니다. SDK의 책임자 수락 함수와 감사 콜백이 Axum 핸들러에서 컴파일되도록 고쳤습니다.",
+        "action": "전역 CLI를 갱신한 뒤 신고를 보낸 환경에서 miy report result <신고 UUID>를 실행하세요. 책임자 수락을 사용하는 앱은 miy app upgrade로 SDK 번들을 갱신하세요."
+      },
+      "en": {
+        "change": "Read processing status and the action taken from the submitting CLI. Both steward acceptance APIs now compile in Axum handlers.",
+        "action": "Update the CLI and run miy report result <report UUID> from the original outbox. Run miy app upgrade for apps using steward acceptance."
+      }
+    },
+    {
       "cliVersion": "0.23.0",
       "bundleVersion": "0.17.0",
       "rustSdkVersion": "0.7.0",

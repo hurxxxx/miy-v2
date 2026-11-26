@@ -216,7 +216,18 @@ test("anonymous reports persist once, stay private and support administrator tri
     expect((await client.patch(`${endpoint}/${input.id}`, { data: { status: "resolved", note: "", revision: 1 } })).status()).toBe(403);
     expect((await client.post(endpoint, { data: input, headers: { origin: String(baseURL) } })).status()).toBe(403);
     expect((await client.post(endpoint, { data: { ...input, id: randomUUID(), credentials: "disallowed" } })).status()).toBe(422);
-    expect((await client.post(endpoint, { data: { ...input, id: randomUUID(), message: "x".repeat(17000) } })).status()).toBe(413);
+    const keyed = { ...input, id: randomUUID(), message: "한😀".repeat(16000) };
+    const receiptHeaders = { "x-miy-report-key": randomUUID() };
+    expect((await client.post(endpoint, { data: keyed, headers: receiptHeaders })).status()).toBe(201);
+    const resultUrl = endpoint + "/result";
+    const first = await client.post(resultUrl, { data: keyed, headers: receiptHeaders });
+    expect(await first.json()).toEqual({ id: keyed.id, status: "open", result: "" });
+    expect((await client.post(resultUrl, { data: keyed })).status()).toBe(404);
+    expect((await client.post(resultUrl, { data: keyed, headers: { "x-miy-report-key": randomUUID() } })).status()).toBe(404);
+    expect((await client.post(resultUrl, { data: { ...input, message: "wrong receipt" } })).status()).toBe(404);
+    expect((await client.post(resultUrl, { data: input, headers: { origin: String(baseURL) } })).status()).toBe(403);
+    expect((await client.post(endpoint, { data: { ...input, id: randomUUID(), message: "한".repeat(32001) } })).status()).toBe(400);
+    expect((await client.post(endpoint, { data: { ...input, id: randomUUID(), message: "x".repeat(262145) } })).status()).toBe(413);
     const origins = await serverOrigins(page);
     expect((await client.get(origins.consoleOrigin + endpoint)).status()).toBe(401);
     expect((await client.post(origins.devPortalOrigin + endpoint, { data: input })).status()).toBe(403);
@@ -234,21 +245,25 @@ test("anonymous reports persist once, stay private and support administrator tri
     await expect(report).toContainText("[redacted sensitive line]");
     expect(await report.locator("script").count()).toBe(0);
     await report.getByRole("combobox", { name: "처리 상태" }).selectOption("investigating");
-    await report.getByLabel("조사·해결 메모").fill("안전한 OS 오류 코드를 확인 중");
+    await report.getByLabel("관리자 내부 메모").fill("안전한 OS 오류 코드를 확인 중");
+    await report.getByLabel("제보자에게 표시할 조치 결과").fill("Axum 핸들러 수정 확인");
     await report.getByRole("button", { name: "처리 저장" }).click();
     await expect(page.getByText("처리 상태와 메모를 저장했습니다.")).toBeVisible();
     const me = await (await page.request.get(origins.consoleOrigin + "/api/v1/me")).json();
+    const published = await client.post(resultUrl, { data: input });
+    expect(published.headers()["cache-control"]).toBe("no-store");
+    expect(await published.json()).toEqual({ id: input.id, status: "investigating", result: "Axum 핸들러 수정 확인" });
     const update = { status: "resolved", note: "해결 확인", revision: 1 };
     expect((await page.request.patch(origins.consoleOrigin + endpoint + `/${input.id}`, { data: update, headers: { origin: origins.consoleOrigin, "x-miy-csrf": me.csrf } })).status()).toBe(409);
     expect((await page.request.patch(origins.consoleOrigin + endpoint + `/${input.id}`, { data: { ...update, revision: 2 } })).status()).toBe(403);
     await page.reload();
     await page.getByRole("button", { name: "신고 조회", exact: true }).click();
     await report.locator(":scope > summary").click();
-    await expect(report.getByLabel("조사·해결 메모")).toHaveValue("안전한 OS 오류 코드를 확인 중");
+    await expect(report.getByLabel("관리자 내부 메모")).toHaveValue("안전한 OS 오류 코드를 확인 중");
     const entries = await (await page.request.get(origins.consoleOrigin + endpoint)).json();
     expect(entries.entries.filter((entry: {id: string}) => entry.id === input.id)).toHaveLength(1);
     // Fill the bounded hourly intake in this disposable database only.
-    for (let i = 0; i < 119; i++) {
+    for (let i = 0; i < 118; i++) {
       expect((await client.post(endpoint, { data: { ...input, id: randomUUID(), message: "rate fixture" } })).status()).toBe(201);
     }
     expect((await client.post(endpoint, { data: { ...input, id: randomUUID() } })).status()).toBe(429);

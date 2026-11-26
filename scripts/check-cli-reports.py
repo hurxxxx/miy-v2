@@ -17,14 +17,26 @@ def main():
     cli = str(Path(parser.parse_args().cli).resolve())
     received, mode = [], ["ok"]
 
+    receipt_keys = {}
+
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
             pass
 
         def do_POST(self):
-            assert self.path == "/api/v1/support/reports"
+            assert self.path in ("/api/v1/support/reports", "/api/v1/support/reports/result")
             assert not self.headers.get("Authorization") and not self.headers.get("Cookie")
             payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            key = self.headers.get("x-miy-report-key")
+            if self.path.endswith("/result"):
+                assert any(v == payload for v in received) and key == receipt_keys[payload["id"]]
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(json.dumps({"id":payload["id"],"status":"resolved","result":"고쳤습니다"}).encode())
+                return
+            if payload["id"] in receipt_keys:
+                assert receipt_keys[payload["id"]] == key
+            receipt_keys[payload["id"]] = key
             received.append(payload)
             if mode[0] == "drop":
                 self.connection.shutdown(socket.SHUT_RDWR)
@@ -80,6 +92,10 @@ def main():
                 assert Path(response["file"]).stat().st_mode & 0o077 == 0
                 assert (config / "reports").stat().st_mode & 0o077 == 0
             checks.append("private_local_outbox")
+            assert receipt_keys[response["id"]] and "resultKey" not in run("report","show",response["id"])["data"]
+            action = run(*response["resultCommand"]["args"])["data"]
+            assert action == {"id":response["id"],"status":"resolved","result":"고쳤습니다"}
+            checks.append("origin_bound_anonymous_receipt_result")
             mode[0] = "drop"
             queued = run("report", "send", "--message", "응답 유실", exit_code=8)["error"]
             assert queued["code"] == "report_queued" and queued["recovery"]["args"][-1] == received[-1]["id"]

@@ -45,6 +45,7 @@ pub async fn run() -> Result<Value> {
         Some("0.9.0") => include_str!("../bundles/0.9.0.json"),
         Some("0.10.0") => include_str!("../bundles/0.10.0.json"),
         Some("0.11.0") => include_str!("../bundles/0.11.0.json"),
+        Some("0.17.0") => include_str!("../bundles/0.17.0.json"),
         Some("0.16.0") => include_str!("../bundles/0.16.0.json"),
         Some("0.15.0") => include_str!("../bundles/0.15.0.json"),
         Some("0.14.0") => include_str!("../bundles/0.14.0.json"),
@@ -672,6 +673,7 @@ mod tests {
             include_str!("../bundles/0.14.0.json"),
             include_str!("../bundles/0.15.0.json"),
             include_str!("../bundles/0.16.0.json"),
+            include_str!("../bundles/0.17.0.json"),
         ] {
             let old: Value = serde_json::from_str(previous).unwrap();
             for (path, hash) in &current {

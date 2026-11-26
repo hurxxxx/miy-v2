@@ -25,7 +25,7 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
     let route = route.strip_prefix("/api/v1").unwrap_or(route);
     Some(match route {
         "/cli/agent-setup" | "/cli/release-notes" if read => Access::Public,
-        "/support/reports" if *method == Method::POST => Access::Public,
+        "/support/reports" | "/support/reports/result" if *method == Method::POST => Access::Public,
         "/support/reports" | "/support/reports/{id}" => Access::Console,
         // The two anonymous account-link calls also require the console's own
         // page as Origin in their handlers; the portals never serve them.

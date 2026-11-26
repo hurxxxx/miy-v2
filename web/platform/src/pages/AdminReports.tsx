@@ -5,7 +5,7 @@ import { request } from "@miy/sdk";
 import { Badge, Button, Field, Panel } from "../ui";
 
 type Report = {
-  id: string; status: string; note: string; revision: number; createdAt: string;
+  id: string; status: string; note: string; result: string; revision: number; createdAt: string;
   report: { threadId?: string; message: string; diagnostics: Record<string, unknown> };
 };
 type Page = { entries: Report[]; nextCursor: number | null };
@@ -43,11 +43,16 @@ export function SupportReports({ csrf }: { csrf: string }) {
   async function update(event: FormEvent<HTMLFormElement>, report: Report) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const publishedResult = String(form.get("result") ?? "");
+    if (Array.from(publishedResult).length > 32000) {
+      setMessage(t("reports.resultTooLong"));
+      return;
+    }
     setBusy(true);
     setMessage("");
     try {
       const result = await request<Report>(`/api/v1/support/reports/${report.id}`, csrf, {
-        method: "PATCH", body: JSON.stringify({ status: form.get("status"), note: form.get("note"), revision: report.revision }),
+        method: "PATCH", body: JSON.stringify({ status: form.get("status"), note: form.get("note"), result: publishedResult, revision: report.revision }),
       });
       setPage((previous) => previous && ({ ...previous, entries: previous.entries.map((entry) => entry.id === result.id ? result : entry) }));
       setMessage(t("reports.saved"));
@@ -81,6 +86,7 @@ export function SupportReports({ csrf }: { csrf: string }) {
           {STATUSES.map((value) => <option key={value} value={value}>{status(value)}</option>)}
         </select></Field>
         <Field label={t("reports.note")}><textarea className="ui-input" name="note" maxLength={4000} rows={4} defaultValue={entry.note} disabled={busy} /></Field>
+        <Field label={t("reports.result")}><textarea className="ui-input" name="result" rows={4} defaultValue={entry.result} disabled={busy} /></Field>
         <Button type="submit" disabled={busy}>{t("reports.save")}</Button>
       </form>
     </details>)}
