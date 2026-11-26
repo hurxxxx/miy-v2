@@ -243,6 +243,7 @@ def check(cli):
                     require(entry['origin'] == origin and entry['userId'] == USER and entry['context'] == 'fixture', 'Journal identity is unbound')
                     with tarfile.open(fileobj=io.BytesIO(raw)) as archive:
                         names = archive.getnames()
+                        require(archive.extractfile('README.md').read() == b'Fixture endpoint documentation.\n', 'Root README omitted or changed')
                         require(all(member.isfile() for member in archive.getmembers()), 'Source contains a link/special file')
                         require('src/main.rs' in names and 'manifest.json' in names, 'Source snapshot is incomplete')
                         require(not any(name.startswith(('.git/', '.miy/', '.miy-tools/', 'dist/', 'target/')) or name in ['.env', '.mcp.json', 'src/.env'] for name in names),
@@ -337,6 +338,7 @@ def check(cli):
             call(['--context', 'fixture', 'auth', 'login', '--account', 'developer'], cwd=root)
             call(['--context', 'fixture', 'app', 'init', str(project), '--id', APP, '--name', 'Remote build fixture'], cwd=root)
             component_fixture(project)
+            (project / 'README.md').write_text('Fixture endpoint documentation.\n', encoding='utf-8', newline='\n')
             (project / '.env').write_text(SECRET, encoding='utf-8', newline='\n')
             (project / 'src/.env').write_text(SECRET, encoding='utf-8', newline='\n')
             git('-c', 'init.templateDir=', 'init', '--quiet')

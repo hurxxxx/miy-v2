@@ -48,7 +48,9 @@ class H(http.server.BaseHTTPRequestHandler):
  def log_message(self,*args): pass
 http.server.HTTPServer(('0.0.0.0',8080),H).serve_forever()
 '''
-v1='CREATE TABLE app.records(id integer PRIMARY KEY, value text NOT NULL);\n'
+v1 = ("CREATE TABLE app.records(id integer PRIMARY KEY, value text NOT NULL);\n"
+      "CREATE TABLE app.migration_context AS SELECT current_setting('miy.environment') AS environment, "
+      "current_setting('miy.installation_id')::uuid AS installation_id;\n")
 v2='ALTER TABLE app.records ADD COLUMN tag text;\n'
 bad='ALTER TABLE app.records ADD COLUMN failed_column text; SELECT audit_intentionally_missing_function();\n'
 fix='ALTER TABLE app.records ADD COLUMN recovered text;\n'

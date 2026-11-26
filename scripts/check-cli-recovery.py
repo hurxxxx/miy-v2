@@ -391,10 +391,10 @@ def check(cli):
             ok("unfinished, other-image and other-source builds are refused before preflight or submission")
 
             state.build_override = {}
-            envelope = run(deploy + ["--dry-run"], cwd=project, command="app deploy")
-            reviewed = envelope["data"]
+            review_output = run(deploy + ["--dry-run"], cwd=project, command="app deploy")
+            reviewed = review_output["data"]
             plan_file = root / "reviewed-deploy.json"
-            plan_file.write_text(json.dumps(envelope), encoding="utf-8-sig")
+            plan_file.write_text(json.dumps(review_output), encoding="utf-8-sig")
             guarded = deploy + ["--if-current", f"@{plan_file}"]
             # Someone installed and then stopped this app since the operator reviewed
             # the initial-install plan. A fresh preflight alone would permit a restart.

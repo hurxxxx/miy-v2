@@ -1168,6 +1168,14 @@ async fn isolated_runtime_regression() -> Result<()> {
     let release = uuid(&initial["releaseId"]);
     let docker = runtime::inspect(initial["runtimeContainer"].as_str().unwrap()).await?;
     let mut devdb = db(&pool, dev_id, true).await?;
+    let migration_context = "SELECT environment, installation_id FROM app.migration_context";
+    ensure!(
+        sqlx::query_as::<_, (String, Uuid)>(migration_context)
+            .fetch_one(&mut devdb)
+            .await?
+            == ("dev".to_owned(), dev_id),
+        "wrong dev migration context"
+    );
     devdb
         .execute("INSERT INTO app.records VALUES(1,'dev-retained')")
         .await?;
@@ -1431,6 +1439,13 @@ async fn isolated_runtime_regression() -> Result<()> {
     let prod = inst(&pool, "prod").await?;
     let prod_container = runtime::inspect(prod["runtimeContainer"].as_str().unwrap()).await?;
     let mut proddb = db(&pool, uuid(&prod["id"]), true).await?;
+    ensure!(
+        sqlx::query_as::<_, (String, Uuid)>(migration_context)
+            .fetch_one(&mut proddb)
+            .await?
+            == ("prod".to_owned(), uuid(&prod["id"])),
+        "wrong prod migration context"
+    );
     let prodcount: i64 = sqlx::query_scalar("SELECT count(*) FROM app.records")
         .fetch_one(&mut proddb)
         .await?;
