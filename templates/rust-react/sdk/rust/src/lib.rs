@@ -15,8 +15,8 @@ use std::time::Duration;
 
 pub mod acl;
 pub mod notifications;
-pub mod storage;
 pub mod stewards;
+pub mod storage;
 pub use notifications::{Notification, Published};
 pub use storage::{FileCreate, FileMetadata, FileStatus};
 mod directory;
