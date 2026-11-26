@@ -1,0 +1,12 @@
+{
+  "origin": "https://portal.miy.works",
+  "version": "0.24.0",
+  "bundleVersion": "0.17.1",
+  "rustSdkVersion": "0.7.1",
+  "sourceCommit": "1d410d8ece89332baaab32ca61163a71c5f01fe8",
+  "deployedAtUtc": "2026-11-26T23:33:29.119918+00:00",
+  "cliReleaseRun": 45910021042,
+  "verifiedCliTargets": 5,
+  "verifiedTunnelImages": 2,
+  "notes": "https://portal.miy.works/api/v1/cli/release-notes"
+}
