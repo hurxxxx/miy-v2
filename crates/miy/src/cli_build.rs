@@ -566,10 +566,29 @@ pub async fn verify_receipt(session: &Session, receipt: &ServerBuildReceipt) -> 
 pub(crate) fn pack_source(root: &Path, archive: &Path) -> Result<crate::source_archive::Packed> {
     crate::source_archive::pack(root, archive).map_err(|error| {
         let code = error.to_string();
+        if code=="unsupported_permission" {
+            return CliError::new(Category::Environment,"unsupported_permission","Check the manifest permission and upgrade the CLI from your portal installer. platform:stewards:claim requires CLI 0.22.0 or newer.").with_recovery("miy",&["describe","--topic","updates"]).into();
+        }
         let category = if matches!(code.as_str(), "commit_source_before_building" | "source_changed_during_archive") { Category::Conflict } else { Category::Environment };
         CliError::new(category, crate::cli_error::safe_code(&code).unwrap_or("invalid_build_source"),
             "Prepare a clean committed application with intact SDK/components before packaging its source.").into()
     })
+}
+
+/// True only when Git confirms that this server source is in the checked-out history.
+pub(crate) fn source_in_local_history(commit: &str) -> Option<bool> {
+    if commit.len() != 40 || !commit.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let git = |args: &[&str]| std::process::Command::new("git").args(args).output().ok();
+    if !git(&["rev-parse", "--verify", "HEAD"])?.status.success() {
+        return None;
+    }
+    Some(
+        git(&["merge-base", "--is-ancestor", commit, "HEAD"])?
+            .status
+            .success(),
+    )
 }
 
 pub async fn execute(no_wait: bool, timeout: u64) -> Result<Outcome> {
@@ -592,6 +611,25 @@ pub async fn execute(no_wait: bool, timeout: u64) -> Result<Outcome> {
     // Until the journal and its input index are durable, no request can use
     // this new archive for recovery. Drop it on every early exit.
     let mut archive = tempfile::TempPath::try_from_path(archive)?;
+    if let Ok(detail) = app_cli::api(
+        &session,
+        &format!("/api/v1/apps/{}", packed.manifest.id),
+        None,
+    )
+    .await
+        && let Some(items) = detail["installations"].as_array()
+    {
+        for item in items {
+            if let Some(commit) = item["sourceCommit"].as_str()
+                && source_in_local_history(commit) == Some(false)
+            {
+                eprintln!(
+                    "warning: deployed {} source {commit} is outside this checkout's history. Review app status and app source download before deployment.",
+                    item["environment"].as_str().unwrap_or("")
+                );
+            }
+        }
+    }
     if !packed.excluded.is_empty() {
         // The server builds only the application source set. Say which committed
         // files it will not see, so a build that needs one does not fail silently.

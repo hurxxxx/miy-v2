@@ -205,7 +205,27 @@ pub async fn execute(command: SourceCommand) -> Result<Outcome> {
                     "Select the app declared by the local project manifest."
                 )
             );
-            upload(&app, release, &archive).await
+            match upload(&app, release, &archive).await {
+                Err(err)
+                    if Path::new("README.md").is_file()
+                        && err.downcast_ref::<CliError>().is_some_and(|e| {
+                            matches!(
+                                e.code.as_str(),
+                                "release_source_digest_mismatch" | "release_source_size_mismatch"
+                            )
+                        }) =>
+                {
+                    let legacy = temp.path().join("legacy.tar");
+                    let original =
+                        crate::source_archive::pack_committed(Path::new("."), &legacy, false)?;
+                    ensure!(
+                        original.source_commit == source.source_commit,
+                        "source_changed_during_archive"
+                    );
+                    upload(&app, release, &legacy).await
+                }
+                result => result,
+            }
         }
     }
 }

@@ -103,6 +103,9 @@ pub fn allowed_route(context: &Context, path: &str, method: &Method) -> bool {
     let Some(suffix) = path.strip_prefix(&prefix) else {
         return false;
     };
+    if suffix == "platform/steward-assignment" && *method == Method::GET {
+        return true;
+    }
     if suffix.starts_with("platform/steward-assignment") {
         return context.callers.is_empty()
             && context
@@ -477,7 +480,8 @@ mod tests {
         };
         let prefix = format!("/api/v1/installations/{}", c.installation_id);
         let nomination = format!("{prefix}/platform/steward-assignment");
-        assert!(!allowed_route(&c, &nomination, &Method::GET));
+        assert!(allowed_route(&c, &nomination, &Method::GET));
+        assert!(!allowed_route(&c, &nomination, &Method::POST));
         let mut frame = c.clone();
         frame.origin = Some(Origin {
             kind: "frame".into(),

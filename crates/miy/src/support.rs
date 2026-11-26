@@ -92,6 +92,7 @@ fn limited() -> ApiError {
 pub struct Filter {
     pub status: Option<String>,
     pub before: Option<i64>,
+    pub thread_id: Option<Uuid>,
 }
 fn valid_status(s: &str) -> bool {
     matches!(s, "open" | "investigating" | "resolved" | "closed")
@@ -106,8 +107,8 @@ pub async fn list(
     if q.status.as_deref().is_some_and(|v| !valid_status(v)) || q.before.is_some_and(|v| v <= 0) {
         return Err(ApiError::bad("invalid_report_filter"));
     }
-    let rows = sqlx::query("SELECT sequence,id,payload,status,note,revision,created_at,updated_at,updated_by FROM support_reports WHERE ($1::text IS NULL OR status=$1) AND ($2::bigint IS NULL OR sequence<$2) ORDER BY sequence DESC LIMIT 51")
-        .bind(q.status).bind(q.before).fetch_all(&s.pool).await?;
+    let rows = sqlx::query("SELECT sequence,id,payload,status,note,revision,created_at,updated_at,updated_by FROM support_reports WHERE ($1::text IS NULL OR status=$1) AND ($2::bigint IS NULL OR sequence<$2) AND ($3::uuid IS NULL OR id=$3 OR payload->>'threadId'=$3::text) ORDER BY sequence DESC LIMIT 51")
+        .bind(q.status).bind(q.before).bind(q.thread_id).fetch_all(&s.pool).await?;
     let next = if rows.len() > 50 {
         Some(rows[49].get::<i64, _>("sequence"))
     } else {

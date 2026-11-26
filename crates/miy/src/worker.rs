@@ -355,6 +355,8 @@ pub(crate) async fn prepare(
 pub(crate) struct DatabaseResource {
     pub id: Uuid,
     pub database: String,
+    installation_id: Option<Uuid>,
+    environment: String,
     pub owner: String,
     pub migration: String,
     pub runtime: String,
@@ -366,6 +368,8 @@ fn resource(row: sqlx::postgres::PgRow) -> DatabaseResource {
     DatabaseResource {
         id: row.get("id"),
         database: row.get("database_name"),
+        installation_id: row.get("installation_id"),
+        environment: row.get("environment"),
         owner: row.get("owner_role"),
         migration: row.get("migration_role"),
         runtime: row.get("runtime_role"),
@@ -758,6 +762,10 @@ pub(crate) async fn prepare_resource(
         let mut conn = app_owner_connection(resource).await?;
         // A migration waiting behind the running app's locks fails instead of
         // queueing for the whole limit. A migration may set its own value.
+        // A pre-install dev preview already owns its eventual installation ID.
+        sqlx::query("SELECT set_config('miy.environment',$1,false),set_config('miy.installation_id',$2,false)")
+            .bind(&resource.environment).bind(resource.installation_id.unwrap_or(resource.id).to_string())
+            .execute(&mut conn).await?;
         conn.execute("SET lock_timeout='30s'").await?;
         let migrator = sqlx::migrate::Migrator::new(migrations).await?;
         let applied = migrator.run(&mut conn).await;

@@ -105,7 +105,14 @@ def main():
             (config / "config.json").write_text("invalid fixture")
             run("report", "--outbox", str(root / "separate"), "send", "--server", origin, "--message", "설정 파일 오류")
             checks.append("explicit_server_and_outbox_bypass_broken_context")
-            run("report", "send", "--server", origin, "--message", "x" * 4001, exit_code=2)
+            long_file = root / "feedback.txt"
+            message = "한글😀 " * 8000
+            long_file.write_text(message, encoding="utf-8-sig")
+            parent = response["id"]
+            run("report", "send", "--server", origin, "--message-file", str(long_file), "--thread-id", parent)
+            assert received[-1]["message"] == message and received[-1]["threadId"] == parent
+            long_file.write_text(message + "끝", encoding="utf-8")
+            run("report","send","--server",origin,"--message-file",str(long_file),exit_code=2)
             checks.append("bounded_input")
     finally:
         server.shutdown()

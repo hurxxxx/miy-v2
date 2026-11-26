@@ -106,7 +106,10 @@ fn identity(user: &str, environment: &str, installation: &str, admin: bool) -> I
             release_id: RELEASE.into(),
             environment: Some(environment.into()),
             callers: vec![],
-            effective_permissions: vec!["platform:directory:read".into()],
+            effective_permissions: vec![
+                "platform:directory:read".into(),
+                "platform:stewards:claim".into(),
+            ],
             platform: false,
             groups: None,
         },
@@ -265,7 +268,32 @@ async fn postgres_acl_end_to_end() {
         .execute(&pool)
         .await
         .unwrap();
-    assert!(owner.apply_steward_assignment(&pool).await.is_err());
+    let failed = owner
+        .apply_steward_assignment_with(&pool, async |_, _| Err(sqlx::Error::RowNotFound))
+        .await;
+    assert!(failed.is_err());
+    assert_eq!(
+        count(&pool, "SELECT count(*) FROM app.miy_steward_receipts").await,
+        0
+    );
+    sqlx::query("CREATE TABLE app.fixture_accept_audit (assignment_id uuid PRIMARY KEY)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let acknowledged = owner
+        .apply_steward_assignment_with(&pool, async |conn, id| {
+            sqlx::query("INSERT INTO app.fixture_accept_audit VALUES($1::uuid)")
+                .bind(id)
+                .execute(conn)
+                .await?;
+            Ok(())
+        })
+        .await;
+    assert!(acknowledged.is_err()); // local commit succeeded, response to acknowledgement was lost
+    assert_eq!(
+        count(&pool, "SELECT count(*) FROM app.fixture_accept_audit").await,
+        1
+    );
     let mut tx = pool.begin().await.unwrap();
     assert!(owner.is_installation_steward_in(&mut tx).await.unwrap());
     assert!(!admin.is_installation_steward_in(&mut tx).await.unwrap());
@@ -717,6 +745,6 @@ async fn postgres_acl_end_to_end() {
     server.abort();
     pool.close().await;
     println!(
-        "ACL_POSTGRES_PASS: SQL-filtered pagination; fresh groups; direct revocation; default deny/admin; installation/environment isolation; revision conflict; canonical idempotence; result ownership; creator/active manager protection; inactive recipients; directory failure/scope mismatch; create/replace rollback; business row lock; membership ceiling; steward receipt retry after handover"
+        "ACL_POSTGRES_PASS: SQL-filtered pagination; fresh groups; direct revocation; default deny/admin; installation/environment isolation; revision conflict; canonical idempotence; result ownership; creator/active manager protection; inactive recipients; directory failure/scope mismatch; create/replace rollback; business row lock; membership ceiling; steward audit rollback and commit; steward receipt retry after handover"
     );
 }

@@ -84,7 +84,8 @@ pub fn allowed(path: &str) -> bool {
     }
     matches!(
         path,
-        "Cargo.toml"
+        "README.md"
+            | "Cargo.toml"
             | "Cargo.lock"
             | "build.rs"
             | "package.json"
@@ -159,6 +160,15 @@ fn git(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
 /// Capture HEAD blobs, not the working tree. The second HEAD/dirty check catches
 /// an editor or concurrent commit changing source while the archive is prepared.
 pub fn pack(root: &Path, destination: &Path) -> Result<Packed> {
+    pack_committed(root, destination, true)
+}
+
+/// Releases built before CLI 0.23 omitted the root README from their immutable receipt.
+pub(crate) fn pack_committed(
+    root: &Path,
+    destination: &Path,
+    include_readme: bool,
+) -> Result<Packed> {
     ensure!(
         git(root, &["status", "--porcelain"])?.is_empty(),
         "commit_source_before_building"
@@ -185,7 +195,7 @@ pub fn pack(root: &Path, destination: &Path) -> Result<Packed> {
     for entry in tree.split(|b| *b == 0).filter(|e| !e.is_empty()) {
         let entry = std::str::from_utf8(entry).context("source_path_not_utf8")?;
         let (meta, path) = entry.split_once('\t').context("invalid_source_tree")?;
-        if !allowed(path) {
+        if !allowed(path) || (!include_readme && path == "README.md") {
             // Never dropped without telling the developer: the caller reports them.
             if !local_tooling(path) {
                 excluded.push(path.to_owned());

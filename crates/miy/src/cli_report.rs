@@ -19,8 +19,18 @@ pub enum ReportCommand {
     /// Send a manual report without login. Does not read the credential store.
     Send {
         /// Describe the problem without passwords, tokens, personal data or logs.
+        #[arg(
+            long,
+            required_unless_present = "message_file",
+            conflicts_with = "message_file"
+        )]
+        message: Option<String>,
+        /// Read up to 32,000 Unicode characters from a UTF-8 text file, or - for stdin.
         #[arg(long)]
-        message: String,
+        message_file: Option<PathBuf>,
+        /// Group this submission with an earlier report using the first report ID.
+        #[arg(long)]
+        thread_id: Option<Uuid>,
         /// Explicit origin, also usable when the context configuration is broken.
         #[arg(long)]
         server: Option<String>,
@@ -169,7 +179,7 @@ fn invalid_report(reason: &str) -> CliError {
     CliError::new(
         Category::Usage,
         reason,
-        "Use a nonempty description of at most 4000 characters and the supported report format.",
+        "Use a nonempty description of at most 32000 Unicode characters and the supported report format.",
     )
 }
 
@@ -177,6 +187,8 @@ pub async fn execute(command: ReportCommand, outbox: Option<PathBuf>) -> Result<
     match command {
         ReportCommand::Send {
             message,
+            message_file,
+            thread_id,
             server,
             ca_file,
             save_only,
@@ -191,10 +203,33 @@ pub async fn execute(command: ReportCommand, outbox: Option<PathBuf>) -> Result<
                 let (_, context) = cli_config::selected()?;
                 (context.origin, context.ca_file)
             };
+            let message = match (message, message_file) {
+                (Some(message), None) => message,
+                (None, Some(path)) => {
+                    let reader: Box<dyn Read> = if path == Path::new("-") {
+                        Box::new(std::io::stdin())
+                    } else {
+                        Box::new(
+                            std::fs::File::open(path)
+                                .map_err(|_| invalid_report("report_file_unavailable"))?,
+                        )
+                    };
+                    let mut bytes = Vec::new();
+                    reader.take((MAX_BODY + 1) as u64).read_to_end(&mut bytes)?;
+                    if bytes.len() > MAX_BODY {
+                        return Err(invalid_report("report_too_large").into());
+                    }
+                    std::str::from_utf8(bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(&bytes))
+                        .map_err(|_| invalid_report("report_file_not_utf8"))?
+                        .to_owned()
+                }
+                _ => return Err(invalid_report("report_message_required").into()),
+            };
             let mut report = Report {
                 schema_version: 1,
                 id: Uuid::new_v4(),
-                message,
+                message: message.replace("\r\n", "\n"),
+                thread_id,
                 diagnostics: diagnostics(),
             };
             report.validate().map_err(invalid_report)?;

@@ -21,11 +21,11 @@ pub fn validate_checks(checks: &[AcceptanceCheck]) -> Result<(), &'static str> {
     if checks.len() > 64
         || checks.iter().any(|c| {
             c.scope.trim().is_empty()
-                || c.scope.len() > 120
+                || c.scope.chars().count() > 120
                 || c.actor.trim().is_empty()
-                || c.actor.len() > 120
+                || c.actor.chars().count() > 120
                 || c.evidence.trim().is_empty()
-                || c.evidence.len() > 2000
+                || c.evidence.chars().count() > 2000
                 || !["passed", "not_run"].contains(&c.result.as_str())
         })
         || (!checks.is_empty() && !checks.iter().any(|c| c.result == "passed"))
@@ -35,7 +35,10 @@ pub fn validate_checks(checks: &[AcceptanceCheck]) -> Result<(), &'static str> {
     Ok(())
 }
 pub fn validate(value: &ReleaseCheck) -> Result<(), &'static str> {
-    if value.note.trim().is_empty() || value.note.len() > 2000 || value.release_id.is_nil() {
+    if value.note.trim().is_empty()
+        || value.note.chars().count() > 2000
+        || value.release_id.is_nil()
+    {
         return Err("invalid_acceptance_input");
     }
     validate_checks(&value.checks)

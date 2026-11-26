@@ -58,13 +58,17 @@ pub async fn view(
     Extension(p): Extension<Principal>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<Value>> {
-    console(&p)?;
+    if !(p.cli_session_id.is_some() && p.delegation_id.is_none() && p.browser_purpose.is_none()) {
+        console(&p)?;
+    }
     crate::domain::admin(&s, &p).await?;
     let mut conn = s.pool.acquire().await?;
     let approved = approval(&mut conn, id).await?;
     let assignment: Option<Value> = sqlx::query_scalar(
         "SELECT jsonb_build_object('id',a.id,'subjectName',u.name,'subjectId',u.id,
-          'status',a.status,'reason',a.recovery_reason) FROM installation_steward_assignments a
+          'status',a.status,'reason',a.recovery_reason,'assignedBy',a.assigned_by,'createdAt',a.created_at,
+          'appliedAt',(SELECT max(created_at) FROM audit WHERE action='steward.applied'
+              AND target='installation:'||a.installation_id::text||':assignment:'||a.id::text)) FROM installation_steward_assignments a
           JOIN users u ON u.id=a.subject_id WHERE a.installation_id=$1 AND a.superseded_at IS NULL",
     )
     .bind(id)
@@ -197,6 +201,17 @@ pub async fn pending(
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<Value>> {
     let Extension(c) = context.ok_or_else(ApiError::forbidden)?;
+    // Only a direct frame may see an offer. Other verified callers can render normal app pages.
+    if c.installation_id == id
+        && (!c.callers.is_empty()
+            || !c
+                .origin
+                .as_ref()
+                .is_some_and(|origin| origin.kind == "frame")
+            || p.delegation_id.is_some())
+    {
+        return Ok(Json(json!({"assignmentId":null})));
+    }
     let mut tx = app_transaction(Write::begin(&s.pool).await?, &s, &p, &c, id).await?;
     let assignment: Option<Uuid> = sqlx::query_scalar("SELECT id FROM installation_steward_assignments WHERE
         installation_id=$1 AND subject_id=$2 AND superseded_at IS NULL AND status IN ('pending','issued')")

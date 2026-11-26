@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::Path};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const GUIDANCE_VERSION: &str = "1.1.1";
+pub const GUIDANCE_VERSION: &str = "1.2.0";
 const PROTOCOL: &str = "miy.cli-guidance/v1";
 const LOCK: &str = "miy.cli.json";
 pub const API_GUIDE_PATH: &str = "docs/API.md";

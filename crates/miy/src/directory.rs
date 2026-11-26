@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 const DEFAULT_LIMIT: u16 = 50;
 const MAX_LIMIT: u16 = 100;
-const MAX_QUERY_CHARS: usize = 120;
+const MAX_QUERY_CHARS: usize = 254;
 const MAX_ID_CHARS: usize = 256;
 // A lowercased display name may expand in some Unicode case mappings.
 const MAX_CURSOR_NAME_CHARS: usize = 512;
@@ -183,11 +183,21 @@ pub async fn read(
             // strpos performs literal matching, so '%' and '_' never widen a
             // user's search into a SQL wildcard. Name bounds also bound response
             // and cursor size for names imported from an external identity source.
+            let lookup = !filter.q.is_empty()
+                && filter
+                    .q
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"@._+-".contains(&b));
+            let aliases = if lookup && let Some(provider) = state.auth.accounts.as_ref() {
+                provider.search_alias(&filter.q).await
+            } else {
+                Ok(Vec::new())
+            };
             let mut rows = sqlx::query(
                 "SELECT u.id,left(u.name,256) AS name,lower(left(u.name,256)) AS sort_name, \
                  g.id AS primary_group_id,g.name AS primary_group_name \
                  FROM users u LEFT JOIN groups g ON g.id=u.primary_group_id AND g.active AND g.source='hr' \
-                 WHERE u.enabled AND ($1='' OR strpos(lower(u.name),$1)>0 OR strpos(lower(g.name),$1)>0) \
+                 WHERE u.enabled AND ($1='' OR strpos(lower(u.name),$1)>0 OR strpos(lower(g.name),$1)>0 OR u.id=ANY($6::text[]) OR lower(u.id)=$1) \
                  AND ($2::text[] IS NULL OR u.id=ANY($2)) \
                  AND ($3::text IS NULL OR (lower(left(u.name,256)) COLLATE \"C\",u.id COLLATE \"C\") \
                       > ($3 COLLATE \"C\",$4 COLLATE \"C\")) \
@@ -198,8 +208,12 @@ pub async fn read(
             .bind(cursor_name)
             .bind(cursor_id)
             .bind(i64::from(filter.limit) + 1)
+            .bind(aliases.as_ref().map(Vec::as_slice).unwrap_or_default())
             .fetch_all(&state.pool)
             .await?;
+            if rows.is_empty() {
+                aliases?;
+            }
             if rows.len() > usize::from(filter.limit) {
                 rows.pop();
                 if let Some(last) = rows.last() {
@@ -306,7 +320,7 @@ mod tests {
         ] {
             assert!(checked(query).is_err(), "unexpected valid query: {query}");
         }
-        assert!(checked(&format!("q={}", "a".repeat(121))).is_err());
+        assert!(checked(&format!("q={}", "a".repeat(MAX_QUERY_CHARS + 1))).is_err());
         assert!(checked(&format!("ids={}", vec!["a"; 101].join(","))).is_err());
         assert!(checked(&format!("ids={}", "a".repeat(257))).is_err());
         assert_eq!(

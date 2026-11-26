@@ -180,3 +180,11 @@ is marked unstructured. Neither format automatically proves business correctness
 `app start|stop|restart|remove` replaces app control. Prod changes and every app removal require explicit `--context`, `--app`, `--environment` and confirmation (`--yes` for automation). Dry-run uses the same target and returns planned changes/expected state without job creation. Admission and execution recheck state and permissions; app removal preserves the app database. Context removal only affects local configuration.
 
 `app logs --environment dev --tail 100` returns a bounded snapshot with truncation/rotation limits. Resume a known log request with `--request ID`. Do not treat it as retained historical logging.
+
+### Testing and auditing installation stewardship
+
+A local preview, a delegated call, and a platform callback have no pending offer. Render application roles independently of the acceptance button. A real lookup failure from the deployed frame is an error. SDK 0.7 adds `apply_steward_assignment_with(pool, async |conn, assignment_id| { /* insert app audit event */ Ok(()) })`. The callback runs once in the local role and receipt transaction. A failed audit rolls it back. The assignment ID correlates the app audit with the console nomination, actor, reason and applied time.
+
+Run `python sdk/testing/stewards.py` with Docker, the project Rust toolchain and fetched dependencies to rehearse initial acceptance, transaction rollback, handover and receipt retry in disposable PostgreSQL. It starts a local Core fixture and discards its test roster. For a full portal acceptance test use a separately registered dev test app with an empty roster.
+
+On the platform runner, migrations can read `current_setting('miy.environment')` and `current_setting('miy.installation_id')::uuid` to scope one-time data moves. They describe this database connection and must not be used as proof of business permissions.

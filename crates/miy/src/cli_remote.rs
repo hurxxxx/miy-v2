@@ -33,7 +33,16 @@ pub enum RemoteAppCommand {
     /// Show the selected app and visible installations.
     Show,
     /// Show server deployment state for --app, or the current project app.
-    Status,
+    Status {
+        #[arg(long,value_parser=["dev","prod"])]
+        environment: Option<String>,
+        /// Include the console nomination, status and timestamps (platform administrator).
+        #[arg(long)]
+        stewards: bool,
+        /// Read the app-owned roster from its documented GET path as the signed-in CLI user.
+        #[arg(long, requires = "environment")]
+        roster_path: Option<String>,
+    },
     /// Deploy this project's server build or an existing official release to dev.
     Deploy {
         /// Reuse the exact official release on this server, including after a change of developer.
@@ -45,7 +54,7 @@ pub enum RemoteAppCommand {
         no_wait: bool,
         #[arg(long)]
         dry_run: bool,
-        /// Submit only if the target still matches the dry-run data read from @file or stdin (-).
+        /// Submit a matching dry-run JSON result or its data object from @file or stdin (-). UTF-8 BOM accepted.
         #[arg(long, conflicts_with = "dry_run")]
         if_current: Option<String>,
     },
@@ -59,7 +68,7 @@ pub enum RemoteAppCommand {
         no_wait: bool,
         #[arg(long)]
         dry_run: bool,
-        /// Submit only if the target still matches the dry-run data read from @file or stdin (-).
+        /// Submit a matching dry-run JSON result or its data object from @file or stdin (-). UTF-8 BOM accepted.
         #[arg(long, conflicts_with = "dry_run")]
         if_current: Option<String>,
     },
@@ -361,13 +370,36 @@ pub async fn execute_grant(command: GrantCommand) -> Result<Outcome> {
 }
 
 pub async fn execute_app(command: RemoteAppCommand) -> Result<Outcome> {
+    let (filter, stewards, roster_path) = match &command {
+        RemoteAppCommand::Status {
+            environment,
+            stewards,
+            roster_path,
+        } => (environment.clone(), *stewards, roster_path.clone()),
+        _ => (None, false, None),
+    };
+    if let Some(path) = &roster_path
+        && !path.strip_prefix('/').is_some_and(|s| {
+            s.len() <= 200
+                && crate::contract::safe_relative(s)
+                && s.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"/_-".contains(&b))
+        })
+    {
+        return Err(CliError::new(
+            Category::Usage,
+            "invalid_roster_path",
+            "Pass the app-relative GET path, for example /roles.",
+        )
+        .into());
+    }
     match command {
         RemoteAppCommand::List => {
             let session = app_cli::session()?;
             require_features(&session, &["lists.pagination.v1"]).await?;
             data(app_cli::api(&session, &query("/api/v1/apps", &[]), None).await?)
         }
-        RemoteAppCommand::Show | RemoteAppCommand::Status => {
+        RemoteAppCommand::Show | RemoteAppCommand::Status { .. } => {
             let app = selected_app()?;
             let session = app_cli::session()?;
             require_features(&session, &["lists.pagination.v1"]).await?;
@@ -392,13 +424,44 @@ pub async fn execute_app(command: RemoteAppCommand) -> Result<Outcome> {
                 None
             };
             if let Some(items) = value["installations"].as_array_mut() {
+                items.retain(|item| {
+                    filter
+                        .as_deref()
+                        .is_none_or(|env| item["environment"] == env)
+                });
                 for item in items {
+                    if let Some(path) = &roster_path {
+                        let id = item["id"]
+                            .as_str()
+                            .ok_or_else(|| anyhow::anyhow!("missing installation ID"))?;
+                        item["appRoster"] = app_cli::api(
+                            &session,
+                            &format!("/api/v1/installations/{id}/api{path}"),
+                            None,
+                        )
+                        .await?;
+                    }
+                    if stewards {
+                        let id = item["id"]
+                            .as_str()
+                            .ok_or_else(|| anyhow::anyhow!("missing installation ID"))?;
+                        item["stewardAssignment"] = app_cli::api(
+                            &session,
+                            &format!("/api/v1/installations/{id}/steward-assignment"),
+                            None,
+                        )
+                        .await?;
+                    }
                     item["url"] = json!(format!(
                         "{}/environments/{}/apps/{app}",
                         session.origin,
                         item["environment"].as_str().unwrap_or("dev")
                     ));
                     if let Some(ref manifest) = local {
+                        if let Some(commit) = item["sourceCommit"].as_str() {
+                            item["sourceInLocalHistory"] =
+                                json!(crate::cli_build::source_in_local_history(commit));
+                        }
                         item["localManifestName"] = json!(manifest.name);
                         item["displayNameDiffers"] = json!(item["name"] != manifest.name);
                     }
@@ -698,10 +761,37 @@ async fn mutate(
         image_id: image,
         release_id: release,
     };
-    let reviewed: Option<PreflightResult> = if_current
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Reviewed {
+        Direct(PreflightResult),
+        Cli {
+            ok: bool,
+            command: String,
+            data: PreflightResult,
+        },
+    }
+    let reviewed: Option<Reviewed> = if_current
         .as_deref()
         .map(crate::cli_input::read)
         .transpose()?;
+    let reviewed = match reviewed {
+        Some(Reviewed::Direct(plan)) => Some(plan),
+        Some(Reviewed::Cli {
+            ok: true,
+            command,
+            data,
+        }) if command == format!("app {}", action.as_str()) => Some(data),
+        Some(_) => {
+            return Err(CliError::new(
+                Category::Usage,
+                "invalid_preflight_result",
+                "Use the successful dry-run output from the same command.",
+            )
+            .into());
+        }
+        None => None,
+    };
     if let Some(plan) = &reviewed
         && (!plan.can_submit || plan.input != input || plan.expected_state.target != input.target)
     {

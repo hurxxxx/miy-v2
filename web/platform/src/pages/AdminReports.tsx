@@ -6,7 +6,7 @@ import { Badge, Button, Field, Panel } from "../ui";
 
 type Report = {
   id: string; status: string; note: string; revision: number; createdAt: string;
-  report: { message: string; diagnostics: Record<string, unknown> };
+  report: { threadId?: string; message: string; diagnostics: Record<string, unknown> };
 };
 type Page = { entries: Report[]; nextCursor: number | null };
 const STATUSES = ["open", "investigating", "resolved", "closed"] as const;
@@ -16,6 +16,7 @@ export function SupportReports({ csrf }: { csrf: string }) {
   const status = (value: string) => ((STATUSES as readonly string[]).includes(value) ? t(`reports.statuses.${value}`) : value);
   const [page, setPage] = useState<Page | null>(null);
   const [filter, setFilter] = useState("");
+  const [thread, setThread] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const sequence = useRef(0);
@@ -26,6 +27,7 @@ export function SupportReports({ csrf }: { csrf: string }) {
     setMessage("");
     const params = new URLSearchParams();
     if (status) params.set("status", status);
+    if (thread.trim()) params.set("threadId", thread.trim());
     if (before) params.set("before", String(before));
     try {
       const result = await request<Page>(`/api/v1/support/reports?${params}`);
@@ -63,6 +65,7 @@ export function SupportReports({ csrf }: { csrf: string }) {
         <option value="">{t("reports.all")}</option>
         {STATUSES.map((value) => <option key={value} value={value}>{status(value)}</option>)}
       </select></Field>
+      <Field label={t("reports.thread")}><input value={thread} onChange={e=>{setThread(e.target.value);setPage(null);}} /></Field>
       <Button type="submit" disabled={busy}>{t("reports.search")}</Button>
     </form>
     {message && <p role="status">{message}</p>}
@@ -70,6 +73,7 @@ export function SupportReports({ csrf }: { csrf: string }) {
     {page?.entries.map((entry) => <details key={`${entry.id}:${entry.revision}`} className="support-report">
       <summary><Badge>{status(entry.status)}</Badge> {formatDateTime(entry.createdAt, { dateStyle: "medium", timeStyle: "medium" })} · {entry.report.message.slice(0, 80)}</summary>
       <p>{t("reports.number")} <code>{entry.id}</code></p>
+      {entry.report.threadId && <p>{t("reports.thread")} <code>{entry.report.threadId}</code></p>}
       <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{entry.report.message}</p>
       <details><summary>{t("reports.diagnostics")}</summary><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{JSON.stringify(entry.report.diagnostics, null, 2)}</pre></details>
       <form className="grant-form" onSubmit={(event) => void update(event, entry)} aria-label={t("reports.handle", { id: entry.id })}>

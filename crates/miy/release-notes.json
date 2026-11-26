@@ -2,6 +2,20 @@
   "schemaVersion": 1,
   "releases": [
     {
+      "cliVersion": "0.23.0",
+      "bundleVersion": "0.17.0",
+      "rustSdkVersion": "0.7.0",
+      "date": "2026-11-26",
+      "ko": {
+        "change": "개선 신고를 32,000자까지 접수하고 파일 입력과 관련 신고 묶음을 지원합니다. 인수 전 릴리스 확인, 소스 README 복원, 설치별 마이그레이션 설정, 로그인 ID·이메일 검색, 운영 책임자 조회·감사·격리 시험을 추가했습니다.",
+        "action": "전역 CLI를 갱신하세요. 긴 신고는 miy report send --message-file feedback.txt로 보내고, 인수는 app accept --dry-run으로 확인한 릴리스 ID를 지정하세요. 새 책임자 SDK를 도입할 앱은 app upgrade 후 격리 시험을 실행하세요."
+      },
+      "en": {
+        "change": "Submit up to 32,000 Unicode characters from text files and group follow-ups. Review release identity and acceptance, recover README.md, read migration context, search exact directory aliases, inspect steward status and rehearse transactional audit.",
+        "action": "Update the global CLI. Use report send --message-file feedback.txt for long reports. Inspect app accept --dry-run and pin the release for acceptance. Upgrade adopting projects and run the disposable SDK rehearsal."
+      }
+    },
+    {
       "cliVersion": "0.22.0",
       "bundleVersion": "0.16.0",
       "rustSdkVersion": "0.6.0",

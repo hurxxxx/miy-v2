@@ -38,6 +38,17 @@ impl Identity {
 
     /// Backend-only nomination lookup. A UI only needs whether to offer acceptance.
     pub async fn pending_steward_assignment(&self) -> Result<Option<String>, CallError> {
+        if self.context.platform
+            || !self.context.callers.is_empty()
+            || self.delegation_token().is_none()
+            || !self
+                .context
+                .effective_permissions
+                .iter()
+                .any(|permission| permission == "platform:stewards:claim")
+        {
+            return Ok(None);
+        }
         let value = self.call(PATH, Method::GET, None).await?;
         let offer: Assignment =
             serde_json::from_value(value).map_err(|_| call_error("invalid_steward_response"))?;
@@ -54,6 +65,20 @@ impl Identity {
     /// Call on a user-initiated app write. True means this assignment was applied or
     /// acknowledged on retry. Check the current local role to authorize subsequent work.
     pub async fn apply_steward_assignment(&self, pool: &PgPool) -> Result<bool, CallError> {
+        self.apply_steward_assignment_with(pool, async |_, _| Ok(()))
+            .await
+    }
+
+    /// Run app audit SQL on the same connection as the new role and receipt.
+    /// The callback receives the assignment UUID, runs once, and an error rolls back all local changes.
+    pub async fn apply_steward_assignment_with<F>(
+        &self,
+        pool: &PgPool,
+        audit: F,
+    ) -> Result<bool, CallError>
+    where
+        F: for<'a> AsyncFnOnce(&'a mut PgConnection, &'a str) -> Result<(), sqlx::Error>,
+    {
         let installation = &self.context.installation_id;
         let environment = self
             .context
@@ -106,6 +131,7 @@ impl Identity {
                 VALUES ($1::uuid,$2::uuid,$3,$4)")
                 .bind(&id).bind(installation).bind(environment).bind(&self.user_id)
                 .execute(&mut *tx).await.map_err(db)?;
+            audit(&mut tx, &id).await.map_err(db)?;
         }
         tx.commit().await.map_err(db)?;
         self.call(

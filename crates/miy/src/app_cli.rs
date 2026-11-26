@@ -83,6 +83,9 @@ pub enum AppCommand {
     },
     /// Record evidence for a dev release before promotion.
     Accept {
+        /// Inspect the selected dev release, version and evidence without recording acceptance.
+        #[arg(long)]
+        dry_run: bool,
         #[arg(long, conflicts_with = "input")]
         note: Option<String>,
         #[arg(long, conflicts_with = "input")]
@@ -285,7 +288,7 @@ pub(crate) fn check() -> Result<Manifest> {
 fn removed(args: &[&str]) -> Result<Outcome> {
     Err(CliError::new(Category::Usage,"removed_command","This command was removed. Use the replacement shown in recovery; launch Codex or Claude directly after app setup.").with_recovery("miy",args).into())
 }
-fn selected_app() -> Result<String> {
+pub(crate) fn selected_app() -> Result<String> {
     let app = if let Some(app) = &crate::cli_config::options().app {
         app.clone()
     } else {
@@ -357,6 +360,7 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
             ));
         }
         AppCommand::Accept {
+            dry_run,
             note,
             release,
             report,
@@ -364,6 +368,24 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
         } => {
             let app = selected_app()?;
             let s = session()?;
+            let detail: crate::api_contract::AppDetail =
+                serde_json::from_value(api(&s, &format!("/api/v1/apps/{app}"), None).await?)?;
+            let dev = detail
+                .installations
+                .into_iter()
+                .find(|i| i.environment == crate::runtime_contract::Environment::Dev)
+                .ok_or_else(|| {
+                    CliError::new(
+                        Category::Environment,
+                        "dev_release_required",
+                        "Deploy to dev before accepting a release.",
+                    )
+                })?;
+            let target = json!({"appId":app,"releaseId":dev.release_id,"version":dev.version,"sourceCommit":dev.source_commit,
+                "sourceInLocalHistory":dev.source_commit.as_deref().and_then(|commit|manifest().ok().filter(|m|m.id==app).and_then(|_|crate::cli_build::source_in_local_history(commit)))});
+            if !dry_run && release.is_none() && report.is_none() && input.is_none() {
+                return Err(CliError::new(Category::Usage,"acceptance_release_required","Review the dev release and pass its explicit --release ID, --report or --input.").with_details(target).into());
+            }
             let value: crate::acceptance_contract::ReleaseCheck = if let Some(input) = input {
                 crate::cli_input::read(&input)?
             } else {
@@ -399,21 +421,7 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
                     let release_id = if let Some(release) = release {
                         release
                     } else {
-                        let detail: crate::api_contract::AppDetail = serde_json::from_value(
-                            api(&s, &format!("/api/v1/apps/{app}"), None).await?,
-                        )?;
-                        detail
-                            .installations
-                            .iter()
-                            .find(|v| v.environment == crate::runtime_contract::Environment::Dev)
-                            .map(|v| v.release_id)
-                            .ok_or_else(|| {
-                                CliError::new(
-                                    Category::Environment,
-                                    "dev_release_required",
-                                    "Deploy to dev before accepting a release.",
-                                )
-                            })?
+                        dev.release_id
                     };
                     crate::acceptance_contract::ReleaseCheck {
                         release_id,
@@ -429,6 +437,20 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
                     "Acceptance input must contain a release, note and valid evidence.",
                 )
             })?;
+            if value.release_id != dev.release_id {
+                return Err(CliError::new(
+                    Category::Conflict,
+                    "dev_release_changed",
+                    "The supplied release differs from the current dev installation.",
+                )
+                .with_details(target)
+                .into());
+            }
+            if dry_run {
+                return Ok(Outcome::Data(
+                    json!({"target":target,"acceptance":value,"dryRun":true}),
+                ));
+            }
             return Ok(Outcome::Data(
                 api(
                     &s,

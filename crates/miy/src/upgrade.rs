@@ -45,6 +45,7 @@ pub async fn run() -> Result<Value> {
         Some("0.9.0") => include_str!("../bundles/0.9.0.json"),
         Some("0.10.0") => include_str!("../bundles/0.10.0.json"),
         Some("0.11.0") => include_str!("../bundles/0.11.0.json"),
+        Some("0.16.0") => include_str!("../bundles/0.16.0.json"),
         Some("0.15.0") => include_str!("../bundles/0.15.0.json"),
         Some("0.14.0") => include_str!("../bundles/0.14.0.json"),
         Some("0.13.0") => include_str!("../bundles/0.13.0.json"),
@@ -111,6 +112,7 @@ pub async fn run() -> Result<Value> {
                 | "0.13.0"
                 | "0.14.0"
                 | "0.15.0"
+                | "0.16.0"
         )
     ) {
         let mut changes = crate::agent_tools::setup_changes(&root, None)?;
@@ -398,6 +400,7 @@ fn validate_guidance_change(path: &str, unchanged: bool) -> Result<()> {
                 | "sdk/rust/src/acl.rs"
                 | "sdk/rust/src/acl_postgres_tests.rs"
                 | "sdk/rust/src/acl.sql"
+                | "sdk/testing/stewards.py"
                 | "sdk/rust/src/stewards.rs"
                 | "sdk/rust/src/stewards.sql"
                 | "sdk/rust/Cargo.toml"
@@ -668,6 +671,7 @@ mod tests {
             include_str!("../bundles/0.13.0.json"),
             include_str!("../bundles/0.14.0.json"),
             include_str!("../bundles/0.15.0.json"),
+            include_str!("../bundles/0.16.0.json"),
         ] {
             let old: Value = serde_json::from_str(previous).unwrap();
             for (path, hash) in &current {

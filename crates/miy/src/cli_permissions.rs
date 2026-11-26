@@ -13,8 +13,15 @@ use uuid::Uuid;
 pub enum PermissionCommand {
     /// Read requested/approved external permissions and the revision before changing them.
     Get {
-        #[arg(long)]
-        installation: Uuid,
+        #[arg(
+            long,
+            required_unless_present = "environment",
+            conflicts_with = "environment"
+        )]
+        installation: Option<Uuid>,
+        /// Resolve the selected app installation by environment.
+        #[arg(long,value_parser=["dev","prod"])]
+        environment: Option<String>,
         #[arg(long)]
         release: Option<Uuid>,
     },
@@ -38,8 +45,29 @@ pub async fn execute(command: PermissionCommand) -> Result<Value> {
     match command {
         PermissionCommand::Get {
             installation,
+            environment,
             release,
         } => {
+            let installation = if let Some(id) = installation {
+                id
+            } else {
+                let app = app_cli::selected_app()?;
+                let detail: crate::api_contract::AppDetail = serde_json::from_value(
+                    app_cli::api(&session, &format!("/api/v1/apps/{app}"), None).await?,
+                )?;
+                detail
+                    .installations
+                    .into_iter()
+                    .find(|i| Some(i.environment.as_str()) == environment.as_deref())
+                    .map(|i| i.id)
+                    .ok_or_else(|| {
+                        CliError::new(
+                            Category::Environment,
+                            "installation_not_found",
+                            "The selected app has no visible installation in this environment.",
+                        )
+                    })?
+            };
             let query = release
                 .map(|v| format!("?releaseId={v}"))
                 .unwrap_or_default();

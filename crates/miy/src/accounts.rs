@@ -130,6 +130,54 @@ impl IdentityAdmin {
         format!("{}/admin/realms/{REALM}/users{tail}", self.base)
     }
 
+    /// Return registered subject candidates for an exact directory search. No provider fields leave Core.
+    pub(crate) async fn search_alias(&self, query: &str) -> ApiResult<Vec<String>> {
+        #[derive(Deserialize)]
+        struct Hit {
+            id: String,
+            username: String,
+            email: Option<String>,
+            enabled: bool,
+        }
+        let token = self.token().await?;
+        let mut ids = Vec::new();
+        let fields: &[&str] = if query.contains('@') {
+            &["username", "email"]
+        } else {
+            &["username"]
+        };
+        for field in fields {
+            let reply = self
+                .client
+                .get(self.users(""))
+                .bearer_auth(&token)
+                .query(&[
+                    (*field, query),
+                    ("exact", "true"),
+                    ("max", "100"),
+                    ("briefRepresentation", "true"),
+                ])
+                .send()
+                .await
+                .map_err(|_| unavailable())?
+                .error_for_status()
+                .map_err(|_| unavailable())?;
+            let hits: Vec<Hit> = reply.json().await.map_err(|_| unavailable())?;
+            for hit in hits {
+                if hit.enabled
+                    && (hit.username.eq_ignore_ascii_case(query)
+                        || hit
+                            .email
+                            .as_ref()
+                            .is_some_and(|e| e.eq_ignore_ascii_case(query)))
+                {
+                    ids.push(hit.id);
+                }
+            }
+        }
+        Ok(ids)
+    }
+
     /// Create an enabled sign-in account and return its subject ID. The identity
     /// provider applies its password policy to the same request, so a refused
     /// password leaves no account behind.

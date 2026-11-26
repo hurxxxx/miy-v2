@@ -514,6 +514,7 @@
     "more": "Load more"
   },
   "reports": {
+    "thread": "Report thread ID",
     "statuses": {
       "open": "Received",
       "investigating": "Investigating",

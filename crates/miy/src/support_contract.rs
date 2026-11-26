@@ -2,8 +2,8 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-pub const MAX_BODY: usize = 16 * 1024;
-pub const MAX_MESSAGE: usize = 4000;
+pub const MAX_BODY: usize = 256 * 1024;
+pub const MAX_MESSAGE: usize = 32_000;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -34,6 +34,8 @@ pub struct Report {
     pub schema_version: u32,
     pub id: Uuid,
     pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<Uuid>,
     pub diagnostics: Diagnostics,
 }
 
@@ -41,7 +43,10 @@ impl Report {
     pub fn validate(&self) -> Result<(), &'static str> {
         let d = &self.diagnostics;
         let identifier = |v: &str| crate::cli_error::safe_code(v).is_some();
-        if self.schema_version != 1 || self.id.get_version_num() != 4 {
+        if self.schema_version != 1
+            || self.id.get_version_num() != 4
+            || self.thread_id.is_some_and(|id| id.get_version_num() != 4)
+        {
             return Err("invalid_report_id_or_version");
         }
         if self.message.trim().is_empty()

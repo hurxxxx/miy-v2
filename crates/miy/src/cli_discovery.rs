@@ -471,8 +471,8 @@ fn contracts(command: &str) -> Value {
         "app accept" => {
             json!({"structuredInput":shared_schema::<crate::acceptance_contract::ReleaseCheck>(),
             "inputSource":"--input @file or --input -; mutually exclusive with note/release/report flags",
-            "semanticValidation":{"source":"acceptance_contract::validate","noteMaxBytes":2000,"maxChecks":64,
-                "checkScopeMaxBytes":120,"checkActorMaxBytes":120,"checkEvidenceMaxBytes":2000,
+            "semanticValidation":{"source":"acceptance_contract::validate","noteMaxChars":2000,"maxChecks":64,
+                "checkScopeMaxChars":120,"checkActorMaxChars":120,"checkEvidenceMaxChars":2000,
                 "resultEnum":["passed","not_run"],"nonemptyChecksRequirePassedResult":true}})
         }
         "grant set" | "grant revoke" => {
@@ -646,7 +646,7 @@ fn behavior(command: &str) -> Value {
             "explicitTarget":"Prod operations and every app removal require --context, --app and --environment, including dry-run and retry.",
             "confirmation":"Dry-run skips confirmation. Execution requires interactive confirmation or --yes; permission checks remain mandatory.",
             "dryRun":"No runtime job; returns expected state, intended changes and worker checks that remain deferred.",
-            "conditionalSubmission":"app deploy and app promote accept --if-current @file or - containing the data object from a successful dry-run. The CLI compares the target, release or image, installation and database state before submission.",
+            "conditionalSubmission":"app deploy and app promote accept --if-current @file or - containing either the full successful dry-run output or its data object (UTF-8 BOM accepted). The CLI compares the target, release or image, installation and database state before submission.",
             "serverBuild":"Deploy the current project's succeeded server build, or use app deploy --release UUID to redeploy this app's registered official image to dev with current developer authority. Prod promotion requires dev acceptance.",
             "recovery":"Persisted request keys and payloads are recovered with job resume before creating another operation."}),
         "job resume" => {

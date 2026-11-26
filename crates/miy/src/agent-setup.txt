@@ -5,6 +5,8 @@ You are setting up or developing an independent MIY app in the user's workspace.
 - Human setup page with install commands and copyable agent requests: @MIY_ORIGIN@/cli/install
 - Platform and CLI context origin: @MIY_ORIGIN@
 - Published CLI versions, target archives, hashes and installer commands: @MIY_ORIGIN@/api/v1/cli/install
+- Report development feedback with `miy report send --message-file feedback.txt` (32,000 Unicode characters). Use `--thread-id FIRST_ID` for follow-ups. Include the CLI and SDK version when describing a compatibility issue.
+- Run `miy app status --environment dev` to compare local source history. Review the exact release with `miy app accept --dry-run --note ...`, then supply `--release ID` or evidence containing releaseId. An app that requests platform:stewards:claim requires CLI 0.22.0 or newer. SDK 0.7 provides transaction-bound audit and a disposable rehearsal in sdk/testing/stewards.py.
 - Read changes and upgrade actions at @MIY_ORIGIN@/api/v1/cli/release-notes or use `miy --output json describe --topic updates` offline. Compare the project's CLI and bundle versions before applying the actions for each intervening release.
 - Server features: @MIY_ORIGIN@/api/v1/capabilities
 - Portal, test portal and console addresses: @MIY_ORIGIN@/auth/options

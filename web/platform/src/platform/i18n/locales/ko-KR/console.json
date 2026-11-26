@@ -504,6 +504,7 @@
     "more": "더 보기"
   },
   "reports": {
+    "thread": "관련 신고 묶음 ID",
     "statuses": {
       "open": "접수",
       "investigating": "조사 중",
