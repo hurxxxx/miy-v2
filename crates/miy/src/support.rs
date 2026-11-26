@@ -1,4 +1,4 @@
-//! Anonymous submission only; reading and triage require a current administrator.
+//! Anonymous submission and receipt-based outcomes. Full reports and triage require an administrator.
 use crate::{
     State,
     api_error::{ApiError, ApiResult},

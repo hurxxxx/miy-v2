@@ -97,24 +97,11 @@ pub async fn run() -> Result<Value> {
     // 0.11.0 changes guidance only: builds run on the server and nothing is uploaded.
     // 0.12.0 adds display settings to the browser runtime and gives local
     // preview the platform tokens (sdk/preview/tokens.css, preview.css).
-    if matches!(
+    // All versions have already matched a known, unmodified manifest above.
+    // Only these early bundles need the component-layout migration below.
+    if !matches!(
         old["bundleVersion"].as_str(),
-        Some(
-            "0.6.0"
-                | "0.6.1"
-                | "0.6.2"
-                | "0.7.0"
-                | "0.7.1"
-                | "0.8.0"
-                | "0.9.0"
-                | "0.10.0"
-                | "0.11.0"
-                | "0.12.0"
-                | "0.13.0"
-                | "0.14.0"
-                | "0.15.0"
-                | "0.16.0"
-        )
+        Some("0.3.0" | "0.4.0" | "0.5.0")
     ) {
         let mut changes = crate::agent_tools::setup_changes(&root, None)?;
         for (path, content) in crate::bundle::template() {
