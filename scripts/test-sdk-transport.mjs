@@ -161,7 +161,7 @@ await check('directory values cannot inject routes or another user selector', as
   for (const invalid of [
     { limit: 0 }, { limit: 101 }, { limit: 1.5 }, { kind: 'admin' },
     { kind: 'memberships', q: 'search' }, { ids: [] }, { ids: ['a,b'] },
-    { ids: new Array(101).fill('id') }, { q: '한'.repeat(121) }, { cursor: '' },
+    { ids: new Array(101).fill('id') }, { q: '한'.repeat(255) }, { cursor: '' },
   ]) assert.throws(() => directoryQuery(invalid), /invalid_directory_query/);
 });
 

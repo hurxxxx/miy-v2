@@ -93,7 +93,7 @@ pub async fn check_release(
     if crate::development::active_for_app(&state.pool, app).await? {
         return Err(ApiError::conflict("active_dev_session"));
     }
-    if v.note.trim().is_empty() || v.note.len() > 2000 {
+    if v.note.trim().is_empty() || v.note.chars().count() > 2000 {
         return Err(ApiError::bad("test_note_required"));
     }
     validate_checks(&v.checks)?;

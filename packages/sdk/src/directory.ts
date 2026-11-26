@@ -22,7 +22,7 @@ export function directoryQuery(query: DirectoryQuery = {}): string {
   if (!["users", "groups", "memberships"].includes(kind)) throw new Error("invalid_directory_query");
   const params = new URLSearchParams({ kind });
   if (query.q !== undefined) {
-    if (typeof query.q !== "string" || Array.from(query.q.trim()).length > 120 ||
+    if (typeof query.q !== "string" || Array.from(query.q.trim()).length > 254 ||
         (kind === "memberships" && query.q.trim() !== ""))
       throw new Error("invalid_directory_query");
     params.set("q", query.q.trim());

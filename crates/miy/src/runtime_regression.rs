@@ -750,7 +750,7 @@ async fn accept_and_promote(
         "audit-runtime",
         runtime::ReleaseCheck {
             release_id: release,
-            note: "Synthetic dev acceptance for the runtime activation regression".into(),
+            note: "한글".repeat(1000),
             checks: vec![],
         },
     )

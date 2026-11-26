@@ -29,7 +29,7 @@ const MAX_CURSOR_BYTES: usize = 4096;
 pub struct DirectoryQuery {
     #[serde(default)]
     pub kind: DirectoryKind,
-    /// Literal, case-insensitive name search. Not supported for memberships.
+    /// Literal name search. Users also match exact login IDs or emails. Up to 254 characters.
     pub q: Option<String>,
     /// Between 1 and 100, defaults to 50.
     pub limit: Option<u16>,
@@ -184,10 +184,11 @@ pub async fn read(
             // user's search into a SQL wildcard. Name bounds also bound response
             // and cursor size for names imported from an external identity source.
             let lookup = !filter.q.is_empty()
-                && filter
-                    .q
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b"@._+-".contains(&b));
+                && (filter.q.contains('@')
+                    || filter
+                        .q
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b)));
             let aliases = if lookup && let Some(provider) = state.auth.accounts.as_ref() {
                 provider.search_alias(&filter.q).await
             } else {

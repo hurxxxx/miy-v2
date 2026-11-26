@@ -304,6 +304,116 @@ pub(crate) fn selected_app() -> Result<String> {
     );
     Ok(app)
 }
+async fn accept(
+    dry_run: bool,
+    note: Option<String>,
+    release: Option<uuid::Uuid>,
+    report: Option<PathBuf>,
+    input: Option<String>,
+) -> Result<Outcome> {
+    use crate::acceptance_contract::{AcceptanceCheck, ReleaseCheck};
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Report {
+        release_id: uuid::Uuid,
+        checks: Vec<AcceptanceCheck>,
+    }
+
+    let (release, note, checks) = if let Some(input) = input {
+        let value: ReleaseCheck = crate::cli_input::read(&input)?;
+        (Some(value.release_id), Some(value.note), value.checks)
+    } else if let Some(path) = report {
+        let report: Report = crate::cli_input::read(&format!("@{}", path.display()))?;
+        anyhow::ensure!(
+            !report.checks.is_empty(),
+            CliError::new(
+                Category::Usage,
+                "acceptance_checks_required",
+                "The report must include acceptance checks."
+            )
+        );
+        (Some(report.release_id), note, report.checks)
+    } else {
+        (release, note, Vec::new())
+    };
+
+    if !dry_run && release.is_none() {
+        return Err(CliError::new(Category::Usage, "acceptance_release_required",
+            "Review the dev release with app accept --dry-run, then pass --release, --report or --input.").into());
+    }
+    if note.is_none() && (!dry_run || !checks.is_empty()) {
+        return Err(CliError::new(
+            Category::Usage,
+            "acceptance_note_required",
+            "Provide --note or a complete --input document.",
+        )
+        .into());
+    }
+    let app = selected_app()?;
+    let s = session()?;
+    let (release_id, target) = if dry_run {
+        let detail: crate::api_contract::AppDetail =
+            serde_json::from_value(api(&s, &format!("/api/v1/apps/{app}"), None).await?)?;
+        let dev = detail
+            .installations
+            .into_iter()
+            .find(|i| i.environment == crate::runtime_contract::Environment::Dev)
+            .ok_or_else(|| {
+                CliError::new(
+                    Category::Environment,
+                    "dev_release_required",
+                    "Deploy to dev before accepting a release.",
+                )
+            })?;
+        let target = json!({"appId":app,"releaseId":dev.release_id,"version":dev.version,"sourceCommit":dev.source_commit,
+            "sourceInLocalHistory":dev.source_commit.as_deref().and_then(|commit|manifest().ok().filter(|m|m.id==app).and_then(|_|crate::cli_build::source_in_local_history(commit)))});
+        if release.is_some_and(|id| id != dev.release_id) {
+            return Err(CliError::new(
+                Category::Conflict,
+                "dev_release_changed",
+                "The supplied release differs from the current dev installation.",
+            )
+            .with_details(target)
+            .into());
+        }
+        if note.is_none() {
+            return Ok(Outcome::Data(
+                json!({"target":target,"acceptance":null,"dryRun":true}),
+            ));
+        }
+        (dev.release_id, Some(target))
+    } else {
+        (release.context("missing explicit acceptance target")?, None)
+    };
+    let value = ReleaseCheck {
+        release_id,
+        note: note.context("missing acceptance note")?,
+        checks,
+    };
+    crate::acceptance_contract::validate(&value).map_err(|code| {
+        CliError::new(
+            Category::Usage,
+            code,
+            "Acceptance input must contain a release, note and valid evidence.",
+        )
+    })?;
+    if let Some(target) = target {
+        return Ok(Outcome::Data(
+            json!({"target":target,"acceptance":value,"dryRun":true}),
+        ));
+    }
+    // The server compares this exact ID to the healthy dev release under its deployment lock.
+    Ok(Outcome::Data(
+        api(
+            &s,
+            &format!("/api/v1/apps/{app}/test-acceptance"),
+            Some(serde_json::to_value(value)?),
+        )
+        .await?,
+    ))
+}
+
 pub async fn execute(command: AppCommand) -> Result<Outcome> {
     match command {
         AppCommand::Remote(command) => {
@@ -366,99 +476,7 @@ pub async fn execute(command: AppCommand) -> Result<Outcome> {
             report,
             input,
         } => {
-            let app = selected_app()?;
-            let s = session()?;
-            let detail: crate::api_contract::AppDetail =
-                serde_json::from_value(api(&s, &format!("/api/v1/apps/{app}"), None).await?)?;
-            let dev = detail
-                .installations
-                .into_iter()
-                .find(|i| i.environment == crate::runtime_contract::Environment::Dev)
-                .ok_or_else(|| {
-                    CliError::new(
-                        Category::Environment,
-                        "dev_release_required",
-                        "Deploy to dev before accepting a release.",
-                    )
-                })?;
-            let target = json!({"appId":app,"releaseId":dev.release_id,"version":dev.version,"sourceCommit":dev.source_commit,
-                "sourceInLocalHistory":dev.source_commit.as_deref().and_then(|commit|manifest().ok().filter(|m|m.id==app).and_then(|_|crate::cli_build::source_in_local_history(commit)))});
-            if !dry_run && release.is_none() && report.is_none() && input.is_none() {
-                return Err(CliError::new(Category::Usage,"acceptance_release_required","Review the dev release and pass its explicit --release ID, --report or --input.").with_details(target).into());
-            }
-            let value: crate::acceptance_contract::ReleaseCheck = if let Some(input) = input {
-                crate::cli_input::read(&input)?
-            } else {
-                let note = note.ok_or_else(|| {
-                    CliError::new(
-                        Category::Usage,
-                        "acceptance_note_required",
-                        "Provide --note or a complete --input document.",
-                    )
-                })?;
-                if let Some(report) = report {
-                    #[derive(Deserialize)]
-                    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-                    struct Report {
-                        release_id: uuid::Uuid,
-                        checks: Vec<crate::acceptance_contract::AcceptanceCheck>,
-                    }
-                    let r: Report = crate::cli_input::read(&format!("@{}", report.display()))?;
-                    anyhow::ensure!(
-                        !r.checks.is_empty(),
-                        CliError::new(
-                            Category::Usage,
-                            "acceptance_checks_required",
-                            "The report must include acceptance checks."
-                        )
-                    );
-                    crate::acceptance_contract::ReleaseCheck {
-                        release_id: r.release_id,
-                        note,
-                        checks: r.checks,
-                    }
-                } else {
-                    let release_id = if let Some(release) = release {
-                        release
-                    } else {
-                        dev.release_id
-                    };
-                    crate::acceptance_contract::ReleaseCheck {
-                        release_id,
-                        note,
-                        checks: vec![],
-                    }
-                }
-            };
-            crate::acceptance_contract::validate(&value).map_err(|code| {
-                CliError::new(
-                    Category::Usage,
-                    code,
-                    "Acceptance input must contain a release, note and valid evidence.",
-                )
-            })?;
-            if value.release_id != dev.release_id {
-                return Err(CliError::new(
-                    Category::Conflict,
-                    "dev_release_changed",
-                    "The supplied release differs from the current dev installation.",
-                )
-                .with_details(target)
-                .into());
-            }
-            if dry_run {
-                return Ok(Outcome::Data(
-                    json!({"target":target,"acceptance":value,"dryRun":true}),
-                ));
-            }
-            return Ok(Outcome::Data(
-                api(
-                    &s,
-                    &format!("/api/v1/apps/{app}/test-acceptance"),
-                    Some(serde_json::to_value(value)?),
-                )
-                .await?,
-            ));
+            return accept(dry_run, note, release, report, input).await;
         }
         AppCommand::Init {
             path,

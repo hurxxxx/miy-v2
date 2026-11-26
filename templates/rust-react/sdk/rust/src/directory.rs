@@ -64,7 +64,7 @@ pub struct DirectoryQuery {
 impl DirectoryQuery {
     pub(crate) fn suffix(&self) -> Result<String, CallError> {
         let q = self.q.as_deref().unwrap_or_default().trim();
-        if q.chars().count() > 120
+        if q.chars().count() > 254
             || (self.kind == DirectoryKind::Memberships && !q.is_empty())
             || self.limit.is_some_and(|limit| !(1..=100).contains(&limit))
             || self.cursor.as_ref().is_some_and(String::is_empty)
@@ -187,7 +187,7 @@ mod tests {
                 ..Default::default()
             },
             DirectoryQuery {
-                q: Some("한".repeat(121)),
+                q: Some("한".repeat(255)),
                 ..Default::default()
             },
             DirectoryQuery {
