@@ -99,6 +99,20 @@ pub fn router_for(state: State, purpose: BrowserPurpose) -> Router {
             axum::routing::post(crate::storage::download_link),
         )
         .route(
+            "/installations/{id}/steward-assignment",
+            axum::routing::get(crate::installation_stewards::view)
+                .put(crate::installation_stewards::nominate),
+        )
+        .route(
+            "/installations/{id}/platform/steward-assignment",
+            axum::routing::get(crate::installation_stewards::pending)
+                .post(crate::installation_stewards::claim),
+        )
+        .route(
+            "/installations/{id}/platform/steward-assignment/applied",
+            axum::routing::post(crate::installation_stewards::applied),
+        )
+        .route(
             "/installations/{id}/file-quota",
             axum::routing::get(crate::storage::quota)
                 .put(crate::storage::set_quota)
@@ -914,6 +928,7 @@ type P = axum::Extension<Principal>;
 async fn capabilities(S(s): S<State>) -> Json<Value> {
     let mut features = vec![
         "installation.permissions.v1",
+        "installation.stewards.v1",
         "auth.delegations.v1",
         "app.calls.v1",
         "app.builds.v1",

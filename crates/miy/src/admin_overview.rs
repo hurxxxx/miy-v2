@@ -66,10 +66,11 @@ pub async fn read(
     let summary: Value = sqlx::query_scalar(
         "WITH current_installations AS (
             SELECT i.app_id, a.name, i.environment, i.app_id || ':' || i.environment AS key,
-                ap.release_id IS NULL AND EXISTS (
+                EXISTS (
                     SELECT 1
                     FROM jsonb_array_elements_text(r.manifest->'requestedPermissions') AS wanted(permission)
-                    WHERE wanted.permission <> 'database'
+                    WHERE wanted.permission <> 'database' AND (ap.release_id IS NULL
+                        OR (ap.reviewed_permissions IS NOT NULL AND NOT ap.reviewed_permissions ? wanted.permission))
                 ) AS awaiting_approval,
                 CASE
                     WHEN i.runtime_status IN ('failed', 'recovery_required', 'unreachable') THEN i.runtime_status

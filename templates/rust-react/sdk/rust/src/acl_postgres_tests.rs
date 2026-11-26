@@ -205,7 +205,32 @@ async fn postgres_acl_end_to_end() {
         tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, origin.port().unwrap()))
             .await
             .unwrap();
+    // An acknowledgement lost after the local commit must never re-grant a removed role.
+    let acknowledgements = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let calls = acknowledgements.clone();
     let router = Router::new()
+        .route(
+            "/api/v1/installations/{installation}/platform/steward-assignment",
+            get(|| async { Json(json!({"assignmentId":GROUP})) }).post(
+                |Json(input): Json<Value>| async move {
+                    assert_eq!(input, json!({"assignmentId":GROUP,"stewards":[]}));
+                    Json(json!({"assignmentId":GROUP}))
+                },
+            ),
+        )
+        .route(
+            "/api/v1/installations/{installation}/platform/steward-assignment/applied",
+            axum::routing::post(move || {
+                let failed = calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0;
+                async move {
+                    if failed {
+                        StatusCode::SERVICE_UNAVAILABLE.into_response()
+                    } else {
+                        Json(json!({"assignmentId":GROUP})).into_response()
+                    }
+                }
+            }),
+        )
         .route(
             "/api/v1/installations/{installation}/platform/directory",
             get(directory),
@@ -236,6 +261,28 @@ async fn postgres_acl_end_to_end() {
     let owner = identity("owner", "dev", INSTALLATION, false);
     let reader = identity("reader", "dev", INSTALLATION, false);
     let admin = identity("admin", "dev", INSTALLATION, true);
+    sqlx::raw_sql(crate::stewards::MIGRATION)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(owner.apply_steward_assignment(&pool).await.is_err());
+    let mut tx = pool.begin().await.unwrap();
+    assert!(owner.is_installation_steward_in(&mut tx).await.unwrap());
+    assert!(!admin.is_installation_steward_in(&mut tx).await.unwrap());
+    sqlx::query("DELETE FROM app.miy_installation_stewards")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    assert!(owner.apply_steward_assignment(&pool).await.unwrap());
+    assert_eq!(
+        count(&pool, "SELECT count(*) FROM app.miy_installation_stewards").await,
+        0
+    );
+    assert_eq!(
+        count(&pool, "SELECT count(*) FROM app.miy_steward_receipts").await,
+        1
+    );
     for id in ["a-hidden", "b-shared", "c-hidden", "d-shared"] {
         create(&acl, &owner, id).await;
     }
@@ -670,6 +717,6 @@ async fn postgres_acl_end_to_end() {
     server.abort();
     pool.close().await;
     println!(
-        "ACL_POSTGRES_PASS: SQL-filtered pagination; fresh groups; direct revocation; default deny/admin; installation/environment isolation; revision conflict; canonical idempotence; result ownership; creator/active manager protection; inactive recipients; directory failure/scope mismatch; create/replace rollback; business row lock; membership ceiling"
+        "ACL_POSTGRES_PASS: SQL-filtered pagination; fresh groups; direct revocation; default deny/admin; installation/environment isolation; revision conflict; canonical idempotence; result ownership; creator/active manager protection; inactive recipients; directory failure/scope mismatch; create/replace rollback; business row lock; membership ceiling; steward receipt retry after handover"
     );
 }

@@ -1,4 +1,4 @@
-//! Explicit external access approvals, scoped to one installation and release.
+//! Explicit external access approvals, kept within one installation across release changes.
 use crate::{
     State,
     api_error::{ApiError, ApiResult},
@@ -131,12 +131,20 @@ async fn record(
     release: Uuid,
     requested: Vec<String>,
 ) -> ApiResult<Value> {
-    let current=sqlx::query("SELECT revision,permissions,approved_by,approved_at FROM installation_permissions WHERE installation_id=$1 AND release_id=$2")
+    let current=sqlx::query("SELECT revision,permissions,reviewed_permissions,approved_by,approved_at FROM installation_permissions WHERE installation_id=$1 AND release_id=$2")
         .bind(installation).bind(release).fetch_optional(&mut *connection).await?;
-    let history:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('revision',revision,'permissions',permissions,'actor',actor,'createdAt',created_at) FROM installation_permission_history WHERE installation_id=$1 AND release_id=$2 ORDER BY revision DESC LIMIT 100")
+    let history:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('revision',revision,'permissions',permissions,'actor',CASE WHEN inherited_from_release_id IS NULL THEN actor END,'inheritedFromReleaseId',inherited_from_release_id,'createdAt',created_at) FROM installation_permission_history WHERE installation_id=$1 AND release_id=$2 ORDER BY revision DESC LIMIT 100")
         .bind(installation).bind(release).fetch_all(&mut *connection).await?;
+    let reviewed = match &current {
+        Some(row) => row
+            .get::<Option<sqlx::types::Json<Vec<String>>>, _>("reviewed_permissions")
+            .map(|v| v.0)
+            .unwrap_or_else(|| requested.clone()),
+        None => vec![],
+    };
+    let unreviewed: Vec<_> = requested.iter().filter(|p| !reviewed.contains(p)).collect();
     Ok(
-        json!({"installationId":installation,"releaseId":release,"requestedPermissions":requested,
+        json!({"unreviewedPermissions":unreviewed,"installationId":installation,"releaseId":release,"requestedPermissions":requested,
         "approvedPermissions":current.as_ref().map(|r|r.get::<Value,_>("permissions")).unwrap_or_else(||json!([])),
         "revision":current.as_ref().map(|r|r.get::<i64,_>("revision")).unwrap_or(0),
         "approvedBy":current.as_ref().map(|r|r.get::<String,_>("approved_by")),
@@ -161,18 +169,19 @@ pub async fn update(
         .ok()
         .and_then(|v| v.checked_add(1))
         .ok_or_else(|| ApiError::bad("invalid_revision"))?;
-    let mut tx = policy::Write::begin(&s.pool).await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
-        .bind(format!(
-            "installation-permissions:{installation}:{}",
-            input.release_id
-        ))
-        .execute(&mut *tx)
-        .await?;
-    // Decide after the approval lock, in the transaction that records the approval.
+    let tx = policy::Write::begin(&s.pool).await?;
     let mut tx = tx
         .decide_platform(p, policy::PlatformAction::Administer)
         .await?;
+    // Serialize the reviewed manifest and revision with all release activations.
+    let active: Uuid =
+        sqlx::query_scalar("SELECT release_id FROM installations WHERE id=$1 FOR UPDATE")
+            .bind(installation)
+            .fetch_one(&mut *tx)
+            .await?;
+    if active != input.release_id {
+        return Err(ApiError::conflict("installation_release_changed"));
+    }
     let previous: Option<i64> = sqlx::query_scalar(
         "SELECT revision FROM installation_permissions WHERE installation_id=$1 AND release_id=$2",
     )
@@ -183,7 +192,7 @@ pub async fn update(
     if previous.unwrap_or(0) != revision - 1 {
         return Err(ApiError::conflict("permission_revision_changed"));
     }
-    sqlx::query("INSERT INTO installation_permissions(installation_id,release_id,revision,permissions,approved_by) VALUES($1,$2,$3,$4,$5) ON CONFLICT(installation_id,release_id) DO UPDATE SET revision=excluded.revision,permissions=excluded.permissions,approved_by=excluded.approved_by,approved_at=clock_timestamp()")
+    sqlx::query("INSERT INTO installation_permissions(installation_id,release_id,revision,permissions,approved_by) VALUES($1,$2,$3,$4,$5) ON CONFLICT(installation_id,release_id) DO UPDATE SET revision=excluded.revision,permissions=excluded.permissions,reviewed_permissions=NULL,approved_by=excluded.approved_by,approved_at=clock_timestamp()")
         .bind(installation).bind(input.release_id).bind(revision).bind(json!(approved)).bind(&p.id).execute(&mut *tx).await?;
     sqlx::query("INSERT INTO installation_permission_history(installation_id,release_id,revision,permissions,actor) VALUES($1,$2,$3,$4,$5)")
         .bind(installation).bind(input.release_id).bind(revision).bind(json!(approved)).bind(&p.id).execute(&mut *tx).await?;

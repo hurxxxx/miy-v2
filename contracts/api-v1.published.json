@@ -1,7 +1,7 @@
 {
   "publishedCli": {
-    "version": "0.18.0",
-    "sourceCommit": "9fe1eac8208e9fa57230c44a895fd998bde1245c"
+    "version": "0.21.1",
+    "sourceCommit": "6d024125ce7291e7a7d7ba4a5400f8415e54e3c9"
   },
   "removable": [],
   "$defs": {
@@ -1519,6 +1519,32 @@
         "jobTitle",
         "pinnedApps",
         "pinnedPanels"
+      ],
+      "type": "object"
+    },
+    "PreviewContext": {
+      "description": "Developer identity and stable dev data scope for a local preview.",
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "environment": {
+          "$ref": "#/$defs/Environment"
+        },
+        "installationId": {
+          "description": "Also used for the first dev installation. Possession grants no platform permissions.",
+          "format": "uuid",
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "appId",
+        "environment",
+        "subjectId",
+        "installationId"
       ],
       "type": "object"
     },

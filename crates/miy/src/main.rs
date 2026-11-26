@@ -100,6 +100,8 @@ mod home;
 #[cfg(feature = "server")]
 mod http;
 mod identity;
+#[cfg(feature = "server")]
+mod installation_stewards;
 #[cfg(all(test, feature = "server"))]
 mod integration;
 #[cfg(feature = "server")]

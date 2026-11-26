@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError, request } from "@miy/sdk";
+import { StewardAssignment } from "./StewardAssignment";
 import { Badge, Button } from "../ui";
 
 /** GET /api/v1/installations/{id}/permissions for the current release. */
@@ -9,6 +10,7 @@ type Approval = {
   releaseId: string;
   requestedPermissions: string[];
   approvedPermissions: string[];
+  unreviewedPermissions?: string[];
   revision: number;
   approvedAt: string | null;
 };
@@ -21,6 +23,7 @@ const LABELS: Record<string, string> = {
   "platform:directory:read": "directoryRead",
   "platform:files:read": "filesRead",
   "platform:files:write": "filesWrite",
+  "platform:stewards:claim": "stewardsClaim",
   "platform:notifications:write": "notificationsWrite",
   "frame:clipboard-write": "clipboardWrite",
   "frame:fullscreen": "fullscreen",
@@ -36,6 +39,7 @@ function checked(value: unknown): Approval {
     !approval ||
     !strings(approval.requestedPermissions) ||
     !strings(approval.approvedPermissions) ||
+    (approval.unreviewedPermissions !== undefined && !strings(approval.unreviewedPermissions)) ||
     typeof approval.revision !== "number"
   )
     throw new Error("invalid_permission_approval");
@@ -59,10 +63,12 @@ export function PermissionApproval({
   releaseId,
   csrf,
   onChange,
+  showStewards = false,
 }: {
   installationId: string;
   releaseId: string;
   csrf: string;
+  showStewards?: boolean;
   onChange?: (pending: number) => void;
 }) {
   const { t } = useTranslation("console");
@@ -102,7 +108,8 @@ export function PermissionApproval({
   if (requested.length === 0)
     return <p className="ui-empty-inline">{t("permissionApproval.none")}</p>;
   const pending = pendingPermissions(approval);
-  const unreviewed = approval.revision === 0;
+  const unreviewedCount = approval.unreviewedPermissions?.length ?? (approval.revision === 0 ? pending.length : 0);
+  const unreviewed = unreviewedCount > 0;
   const changed =
     selected.length !== approval.approvedPermissions.filter(external).length ||
     selected.some((permission) => !approval.approvedPermissions.includes(permission));
@@ -125,6 +132,8 @@ export function PermissionApproval({
       setError(
         caught instanceof ApiError && caught.code === "permission_revision_changed"
           ? t("permissionApproval.changedElsewhere")
+          : caught instanceof ApiError && caught.code === "installation_release_changed"
+          ? t("permissionApproval.releaseChanged")
           : t("permissionApproval.saveFailed"),
       );
       if (caught instanceof ApiError && caught.code === "permission_revision_changed") void load(true);
@@ -134,17 +143,19 @@ export function PermissionApproval({
   }
 
   return (
+    <>
     <fieldset className="permission-approval">
       <legend>
         {t("permissionApproval.title")}{" "}
         {pending.length > 0 ? (
           <Badge tone={unreviewed ? "warning" : "neutral"}>
-            {t(unreviewed ? "permissionApproval.pending" : "permissionApproval.reviewedWithExcluded", { count: pending.length })}
+            {t(unreviewed ? "permissionApproval.pending" : "permissionApproval.reviewedWithExcluded", { count: unreviewed ? unreviewedCount : pending.length })}
           </Badge>
         ) : (
           <Badge tone="success">{t("permissionApproval.approved")}</Badge>
         )}
       </legend>
+      <p className="app-card-meta">{t("permissionApproval.scope")}</p>
       {requested.map((permission) => (
         <label key={permission} className="permission-approval-row">
           <input
@@ -179,5 +190,9 @@ export function PermissionApproval({
         </Button>
       </div>
     </fieldset>
+    {showStewards && approval.approvedPermissions.includes("platform:stewards:claim") && (
+      <StewardAssignment installationId={installationId} csrf={csrf} />
+    )}
+    </>
   );
 }

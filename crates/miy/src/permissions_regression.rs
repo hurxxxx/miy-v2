@@ -576,37 +576,39 @@ pub async fn run(
         "rejected approval changed revision"
     );
     let next_release = Uuid::new_v4();
-    let mut next_permissions = a_permissions.clone();
+    let mut next_permissions = a_permissions[..3].to_vec();
     next_permissions.push(format!("app:{}:write", c.app));
     sqlx::query("INSERT INTO releases(id,app_id,version,artifact_hash,manifest) SELECT $1,app_id,'2.0.0',artifact_hash,jsonb_set(jsonb_set(manifest,'{version}','\"2.0.0\"'::jsonb),'{requestedPermissions}',$2) FROM releases WHERE id=$3")
         .bind(next_release).bind(json!(next_permissions)).bind(a.release).execute(&state.pool).await?;
     ensure!(
         h.read(&admin, &a, next_release).await?["approvedPermissions"] == json!([]),
-        "new release inherited old approvals"
+        "inactive unreleased manifest has an approval snapshot"
     );
     sqlx::query("UPDATE installations SET release_id=$2 WHERE id=$1")
         .bind(a.installation)
         .bind(next_release)
         .execute(&state.pool)
         .await?;
-    denied(
+    let advanced = h.read(&admin, &a, next_release).await?;
+    ensure!(
+        advanced["unreviewedPermissions"] == json!([format!("app:{}:write", c.app)])
+            && advanced["history"][0]["inheritedFromReleaseId"] == json!(a.release)
+            && advanced["history"][0]["actor"].is_null()
+            && advanced["approvedPermissions"]
+                .as_array()
+                .is_some_and(|p| p.len() == 3),
+        "release activation did not carry the exact continuing approval"
+    );
+    response(
         h.request(&user.token, Method::GET, &a.directory())
             .send()
-            .await?,
-    )
-    .await?;
-    denied(
-        h.request(&admin.token, Method::GET, &a.directory())
-            .send()
-            .await?,
-    )
-    .await?;
-    response(
-        h.update(&admin, &a, next_release, 0, &[a_permissions[0].clone()])
             .await?,
         200,
     )
     .await?;
+    response(h.update(&admin, &a, a.release, 1, &[]).await?, 409).await?;
+    h.replace(&admin, &a, next_release, &[a_permissions[0].clone()])
+        .await?;
     response(
         h.request(&user.token, Method::GET, &a.directory())
             .send()
@@ -625,6 +627,19 @@ pub async fn run(
         .bind(a.release)
         .execute(&state.pool)
         .await?;
+    let rolled_back = h.read(&admin, &a, a.release).await?;
+    ensure!(
+        rolled_back["approvedPermissions"] == json!([&a_permissions[0]])
+            && rolled_back["unreviewedPermissions"] == json!([&a_permissions[3]]),
+        "rollback restored a revoked or removed permission"
+    );
+    denied(
+        h.request(&user.token, Method::GET, &a.connection(&b))
+            .send()
+            .await?,
+    )
+    .await?;
+    h.replace(&admin, &a, a.release, &a_permissions).await?;
     let prod = h.app(a.app.clone(), "prod", &a_permissions).await?;
     sqlx::query("UPDATE installations SET release_id=$2 WHERE id=$1")
         .bind(prod.installation)
@@ -647,7 +662,7 @@ pub async fn run(
         404,
     )
     .await?;
-    passed.push("approvals reject foreign releases and undeclared grants; new releases and prod never inherit dev approval".into());
+    passed.push("approvals reject foreign releases and undeclared grants; release activation carries only continuing permissions; new requests, revocation, rollback and independent prod approval".into());
 
     h.call(&user.token, &a, &b).await?;
     let identity = b.last_identity()?;

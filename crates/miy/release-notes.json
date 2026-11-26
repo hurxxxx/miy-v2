@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "releases": [
+    {
+      "cliVersion": "0.22.0",
+      "bundleVersion": "0.16.0",
+      "rustSdkVersion": "0.6.0",
+      "date": "2026-11-26",
+      "ko": {
+        "change": "설치별 최초 앱 운영 책임자 지정과 부재 시 복구를 지원합니다. 지정된 사람은 자신의 앱 세션으로 수락합니다.",
+        "action": "도입할 앱만 SDK 번들을 업그레이드하고 기존 책임자를 앱 DB에 이관한 뒤 수락 동작을 연결하세요. 콘솔에서 해당 환경의 platform:stewards:claim을 승인하고 최초 책임자를 지정하세요. 플랫폼 관리자 계정 정보는 필요하지 않습니다."
+      },
+      "en": {
+        "change": "A console administrator can nominate the first steward for each installation and request recovery when all current stewards are inactive. The nominee accepts in their own app session.",
+        "action": "Adopting apps should upgrade the SDK bundle, migrate the existing steward roster and connect the acceptance action. Approve platform:stewards:claim and nominate a steward per environment. The app needs no platform administrator credentials."
+      }
+    },
+    {
+      "cliVersion": "0.21.1",
+      "bundleVersion": "0.15.0",
+      "date": "2026-11-25",
+      "ko": {
+        "change": "로컬 미리보기의 준비 단계를 줄이고 Windows에서 프로젝트 CLI를 갱신할 때 파일을 사용 중인 프로세스를 안내합니다.",
+        "action": "전역 CLI를 갱신한 뒤 각 프로젝트에서 miy app setup을 실행하고 프로젝트 MCP에 다시 연결하세요."
+      },
+      "en": {
+        "change": "Local preview has fewer startup steps. On Windows, setup identifies the process holding a project executable.",
+        "action": "Update the global CLI, run miy app setup in each project and reconnect its MCP session."
+      }
+    }
+  ]
+}

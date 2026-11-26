@@ -16,6 +16,7 @@ use std::time::Duration;
 pub mod acl;
 pub mod notifications;
 pub mod storage;
+pub mod stewards;
 pub use notifications::{Notification, Published};
 pub use storage::{FileCreate, FileMetadata, FileStatus};
 mod directory;
@@ -195,6 +196,8 @@ const CORE_CODES: &[&str] = &[
     "invalid_notification",
     "notification_request_conflict",
     "installation_permission_denied",
+    "steward_roster_occupied",
+    "steward_assignment_changed",
 ];
 
 /// The refusal of a non-success Core answer: its status, and its code when

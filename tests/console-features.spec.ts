@@ -31,7 +31,7 @@ const installation = {
   ui: { entry: "/unused-manifest.json", export: "./AppRoot", contractVersion: "miy.ui/v1alpha1" },
 };
 
-async function open(page: Page, options: { locale?: string; conflict?: boolean; path?: string; extraUsers?: number; pagedOverview?: boolean } = {}) {
+async function open(page: Page, options: { stewards?: boolean; locale?: string; conflict?: boolean; inherited?: boolean; path?: string; extraUsers?: number; pagedOverview?: boolean } = {}) {
   await mockSurface(page, "console");
   const puts: unknown[] = [];
   const switches: { user: string; body: unknown; csrf: string | null }[] = [];
@@ -45,10 +45,17 @@ async function open(page: Page, options: { locale?: string; conflict?: boolean; 
     installationId: installation.id,
     releaseId: installation.releaseId,
     requestedPermissions: ["database", "platform:directory:read", "platform:files:read"],
-    approvedPermissions: [] as string[],
-    revision: 0,
+    approvedPermissions: options.inherited ? ["platform:directory:read"] : [],
+    unreviewedPermissions: options.inherited ? ["platform:files:read"] : ["platform:directory:read", "platform:files:read"],
+    revision: options.inherited ? 1 : 0,
     approvedAt: null as string | null,
   };
+  const nominations: unknown[] = [];
+  let assignment: { id: string; subjectName: string; subjectId: string; status: string; enabled: boolean; reason: string | null } | null = null;
+  if (options.stewards) {
+    approval.requestedPermissions.push("platform:stewards:claim");
+    approval.approvedPermissions.push("platform:stewards:claim");
+  }
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -60,12 +67,21 @@ async function open(page: Page, options: { locale?: string; conflict?: boolean; 
           preferences: { ...defaultPreferences, locale: options.locale ?? "ko-KR" },
         }),
       });
+    if (options.stewards && path === `/api/v1/installations/${installation.id}/steward-assignment`) {
+      if (request.method() === "PUT") {
+        const body = request.postDataJSON();
+        nominations.push(body);
+        assignment = { id: "first", subjectName: "앨리스", subjectId: body.subjectId, enabled: true, status: "pending", reason: body.reason };
+        return route.fulfill({ json: { id: "first" } });
+      }
+      return route.fulfill({ json: { approved: true, assignment } });
+    }
     if (path === `/api/v1/installations/${installation.id}/permissions`) {
       if (request.method() === "PUT") {
         const body = request.postDataJSON() as { permissions: string[]; expectedRevision: number };
         puts.push({ body, csrf: request.headers()["x-miy-csrf"] });
         if (options.conflict) return route.fulfill({ status: 409, json: { error: { code: "permission_revision_changed" } } });
-        approval = { ...approval, approvedPermissions: body.permissions, revision: body.expectedRevision + 1, approvedAt: new Date().toISOString() };
+        approval = { ...approval, approvedPermissions: body.permissions, unreviewedPermissions: [], revision: body.expectedRevision + 1, approvedAt: new Date().toISOString() };
       }
       return route.fulfill({ json: approval });
     }
@@ -125,7 +141,7 @@ async function open(page: Page, options: { locale?: string; conflict?: boolean; 
     await route.fulfill({ status: 404, json: { error: { code: "not_found" } } });
   });
   await page.goto(options.path ?? "/admin");
-  return { puts, switches, quotas, directoryQueries };
+  return { puts, switches, quotas, directoryQueries, nominations };
 }
 const usersPanel = (page: Page) =>
   page.locator(".ui-panel").filter({ has: page.getByRole("heading", { name: "사용자 계정", exact: true }) });
@@ -201,6 +217,25 @@ test("CSV export walks all server pages for the active filters", async ({ page }
   expect(csv).not.toContain('"alice"');
   const exportQueries = directoryQueries.filter((query) => query.get("limit") === "200");
   expect(exportQueries.map((query) => [query.get("q"), query.get("cursor")])).toEqual([["직원", null], ["직원", "200"]]);
+});
+
+test("an installation steward is nominated by name with the policy and recovery reason visible", async ({ page }) => {
+  const { nominations } = await open(page, { stewards: true, path: "/admin/apps/ledger/installations" });
+  await expect(page.getByText(/지정된 사람이 자기 계정으로/)).toBeVisible();
+  await page.getByRole("combobox", { name: "지정할 사용자" }).fill("앨리");
+  await page.getByRole("option", { name: /앨리스/ }).click();
+  await page.getByRole("button", { name: "최초 책임자 지정" }).click();
+  await expect(page.getByText("앨리스 님의 수락을 기다리고 있습니다.")).toBeVisible();
+  expect(nominations).toEqual([{ subjectId: "alice", expectedAssignmentId: null, reason: null }]);
+  await expect(page.getByLabel("복구·정정 사유")).toBeVisible();
+  await expect(page.getByRole("button", { name: "책임자 재지정 요청" })).toBeDisabled();
+});
+
+test("a new release lists only added permissions as awaiting review", async ({ page }) => {
+  await open(page, { path: "/admin/apps/ledger/installations", inherited: true });
+  await expect(page.getByText("승인 대기 1개")).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: /사용자·그룹 디렉터리 읽기/ })).toBeChecked();
+  await expect(page.getByRole("button", { name: "선택한 대로 저장" })).toBeEnabled();
 });
 
 test("an administrator approves a release's requested platform permissions in place", async ({ page }) => {

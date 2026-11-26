@@ -105,7 +105,7 @@ impl Mcp {
         )
     }
     #[tool(
-        description = "Explicitly replace external-call approvals for an installation/release using the observed revision. Requires a non-delegated administrator; an empty list revokes all external calls."
+        description = "Review the active release and replace this installation’s durable approvals using its observed revision. Requires a non-delegated administrator; an empty list revokes all external calls."
     )]
     async fn set_installation_permissions(
         &self,

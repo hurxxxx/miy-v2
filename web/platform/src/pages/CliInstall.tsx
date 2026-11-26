@@ -3,6 +3,7 @@ import { Link, useLocation } from "@tanstack/react-router";
 import { Trans, useTranslation } from "react-i18next";
 import { request } from "@miy/sdk";
 import { Button } from "../ui";
+import releaseNotes from "../../../../crates/miy/release-notes.json";
 
 type InstallGuide = {
   schemaVersion: number;
@@ -79,7 +80,7 @@ function AgentSetup({ guide }: { guide: InstallGuide }) {
     <h3>{t("cliInstall.agentRequest", { agent })}</h3>
     <Command key={agent} label={t("cliInstall.agentRequest", { agent })}
       command={t("cliInstall.agentPrompt", { agent, url: agentUrl, interpolation: { escapeValue: false } })} />
-    <p><a href={agentUrl}>{t("cliInstall.agentGuide")}</a></p>
+    <p><a href={agentUrl}>{t("cliInstall.agentGuide")}</a> · <GuideLink chapter="maintenance" /></p>
     <h3>{t("cliInstall.agentConfirm")}</h3>
     <p><Trans t={t} i18nKey="cliInstall.verifyAgent" components={markup} /></p>
     <p>{t("cliInstall.agentNext")} <GuideLink chapter="mcp-setup" /></p>
@@ -202,8 +203,15 @@ function McpSetup({ guide }: { guide: InstallGuide }) {
 }
 
 function Maintenance({ guide }: { guide: InstallGuide }) {
-  const { t } = useTranslation("portal");
+  const { t, i18n } = useTranslation("portal");
+  const language = i18n.language.startsWith("ko") ? "ko" : "en";
   return <>
+    <h3>{t("cliInstall.releaseNotes")}</h3>
+    {releaseNotes.releases.map((release) => <section key={release.cliVersion}>
+      <h4>CLI {release.cliVersion} · SDK {release.bundleVersion} · <time>{release.date}</time></h4>
+      <p>{release[language].change}</p><p>{release[language].action}</p>
+    </section>)}
+    <p><a href={new URL("/api/v1/cli/release-notes", guide.serverUrl).href}>{t("cliInstall.releaseNotesJson")}</a></p>
     <h3>{t("cliInstall.updateTitle")}</h3>
     <p>{t("cliInstall.updateStop")} <GuideLink chapter="cli-setup" /></p>
     <Command label={t("cliInstall.versionCommand")} command="miy --version" />

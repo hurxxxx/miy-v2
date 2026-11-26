@@ -24,7 +24,7 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
     let read = matches!(*method, Method::GET | Method::HEAD);
     let route = route.strip_prefix("/api/v1").unwrap_or(route);
     Some(match route {
-        "/cli/agent-setup" if read => Access::Public,
+        "/cli/agent-setup" | "/cli/release-notes" if read => Access::Public,
         "/support/reports" if *method == Method::POST => Access::Public,
         "/support/reports" | "/support/reports/{id}" => Access::Console,
         // The two anonymous account-link calls also require the console's own
@@ -99,6 +99,8 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
         | "/installations/{id}/platform/files/{file}/parts"
         | "/installations/{id}/platform/files/{file}/complete"
         | "/installations/{id}/platform/files/{file}/download"
+        | "/installations/{id}/platform/steward-assignment"
+        | "/installations/{id}/platform/steward-assignment/applied"
         | "/installations/{id}/platform/notifications"
         | "/installations/{id}/platform/notifications/retract"
         | "/installations/{id}/platform/notifications/read"
@@ -117,6 +119,7 @@ pub fn access(route: &str, method: &Method) -> Option<Access> {
         | "/delegations/{id}"
         | "/installations/{id}/permissions"
         | "/installations/{id}/file-quota"
+        | "/installations/{id}/steward-assignment"
         | "/cli-authorizations/{id}/approve"
         | "/cli/logout"
         | "/cli/devices/{id}"

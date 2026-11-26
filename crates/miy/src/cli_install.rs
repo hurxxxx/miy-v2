@@ -354,6 +354,10 @@ pub fn router<S: Clone + Send + Sync + 'static>(origin: String) -> Router<S> {
         .route("/api/v1/cli/install.sh", get(unix_script))
         .route("/api/v1/cli/install.ps1", get(windows_script))
         .route("/api/v1/cli/agent-setup", get(agent_setup))
+        .route(
+            "/api/v1/cli/release-notes",
+            get(async || Json(crate::cli_guidance::release_notes())),
+        )
         .with_state(origin);
     if let Ok(root) = std::env::var("MIY_CLI_RELEASE_DIR") {
         router = router.nest_service("/cli/downloads", tower_http::services::ServeDir::new(root));

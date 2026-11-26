@@ -192,6 +192,7 @@ pub fn valid_permission(p: &str) -> bool {
             | "platform:files:read"
             | "platform:files:write"
             | "platform:notifications:write"
+            | "platform:stewards:claim"
             | "frame:clipboard-write"
             | "frame:fullscreen"
     ) {

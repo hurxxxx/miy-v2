@@ -60,10 +60,13 @@ pub fn manual() -> String {
         command_reference()
     )
 }
+pub fn release_notes() -> Value {
+    serde_json::from_str(include_str!("../release-notes.json")).expect("embedded CLI release notes")
+}
 pub fn update_guide() -> Value {
     json!({"cliVersion":VERSION,"bundleVersion":crate::bundle::VERSION,"guidanceVersion":GUIDANCE_VERSION,
         "scope":"topic","topic":"updates","guide":UPDATES,
-        "installationPage":"/cli/install","authenticationRequired":false,
+        "installationPage":"/cli/install","releaseNotesPath":"/api/v1/cli/release-notes","releaseNotes":release_notes(),"authenticationRequired":false,
         "localEffects":[],"remoteEffects":[]})
 }
 pub fn harness_guide() -> Value {
@@ -283,6 +286,20 @@ pub fn operation(root: &Path) -> Result<OperationLock> {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn update_notes_match_the_shipped_cli_and_bundle() {
+        let guide = super::update_guide();
+        let latest = &guide["releaseNotes"]["releases"][0];
+        assert_eq!(latest["cliVersion"], super::VERSION);
+        assert_eq!(latest["bundleVersion"], crate::bundle::VERSION);
+        for locale in ["ko", "en"] {
+            assert!(
+                latest[locale]["action"]
+                    .as_str()
+                    .is_some_and(|s| !s.is_empty())
+            );
+        }
+    }
     use super::*;
     #[test]
     fn line_endings_are_managed_without_overwriting_custom_attributes() {

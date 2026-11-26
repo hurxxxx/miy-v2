@@ -109,7 +109,27 @@
     "release": "Release",
     "lastOperation": "Latest runtime job"
   },
+  "stewards": {
+    "title": "App stewards",
+    "policy": "Nominate the first steward for this installation. The nominee accepts in the app using their own account. Grant app access separately. The app manages subsequent appointments and business permissions.",
+    "loadFailed": "Could not load the nomination.",
+    "failed": "Could not save the nomination. Check installation consent and the selected account.",
+    "changed": "The nomination changed. Review the current status.",
+    "empty": "No steward has been nominated.",
+    "pending": "Waiting for {{name}} to accept.",
+    "issued": "Waiting for the app to confirm the appointment of {{name}}. If interrupted, accept again in the app with the same account.",
+    "applied": "The app confirmed the appointment of {{name}}. See the app for later handovers.",
+    "blocked": "The app could not apply the nomination of {{name}}. Check its existing stewards and handover status.",
+    "recordedReason": "Recorded reason · {{reason}}",
+    "refresh": "Refresh nomination",
+    "recoveryPolicy": "Use the app for ordinary handovers. Record a reason to correct a pending nomination or recover when every existing steward account is inactive. An active steward blocks recovery.",
+    "person": "Nominee",
+    "reason": "Reason for recovery or correction",
+    "recover": "Request a new nomination",
+    "assign": "Nominate first steward"
+  },
   "permissionApproval": {
+    "scope": "Your choices apply to future releases in this environment while the app continues to request these permissions. New requests require review.",
     "title": "Platform permissions",
     "none": "This release requests no platform permissions.",
     "loadFailed": "Could not load the permission approval.",
@@ -121,11 +141,13 @@
     "approveAll": "Approve all requested",
     "save": "Save selection",
     "saveFailed": "Could not save the permission approval.",
+    "releaseChanged": "The installed release changed. Reload the page to review the current permissions.",
     "changedElsewhere": "Another administrator changed it first. The latest state is loaded again.",
     "labels": {
       "directoryRead": "Read the user and group directory",
       "filesRead": "Read platform files",
       "filesWrite": "Upload platform files",
+      "stewardsClaim": "Accept initial and recovery steward nominations",
       "notificationsWrite": "Send platform notifications",
       "clipboardWrite": "Write to the clipboard from the app screen",
       "fullscreen": "Full screen for the app screen"

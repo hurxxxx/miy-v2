@@ -45,6 +45,7 @@ pub async fn run() -> Result<Value> {
         Some("0.9.0") => include_str!("../bundles/0.9.0.json"),
         Some("0.10.0") => include_str!("../bundles/0.10.0.json"),
         Some("0.11.0") => include_str!("../bundles/0.11.0.json"),
+        Some("0.15.0") => include_str!("../bundles/0.15.0.json"),
         Some("0.14.0") => include_str!("../bundles/0.14.0.json"),
         Some("0.13.0") => include_str!("../bundles/0.13.0.json"),
         Some("0.12.0") => include_str!("../bundles/0.12.0.json"),
@@ -109,6 +110,7 @@ pub async fn run() -> Result<Value> {
                 | "0.12.0"
                 | "0.13.0"
                 | "0.14.0"
+                | "0.15.0"
         )
     ) {
         let mut changes = crate::agent_tools::setup_changes(&root, None)?;
@@ -396,6 +398,8 @@ fn validate_guidance_change(path: &str, unchanged: bool) -> Result<()> {
                 | "sdk/rust/src/acl.rs"
                 | "sdk/rust/src/acl_postgres_tests.rs"
                 | "sdk/rust/src/acl.sql"
+                | "sdk/rust/src/stewards.rs"
+                | "sdk/rust/src/stewards.sql"
                 | "sdk/rust/Cargo.toml"
                 | "sdk/ui/index.tsx"
                 | "miy.components.json"
@@ -436,9 +440,12 @@ fn sdk_upgrade_manifest(manifest: &toml::Value) -> Result<()> {
         .and_then(|value| value.get("members"))
     {
         ensure!(
-            members.as_array().is_some_and(|members| members
-                .iter()
-                .all(|member| matches!(member.as_str(), Some("sdk/rust" | "./sdk/rust")))),
+            members
+                .as_array()
+                .is_some_and(|members| members.iter().all(|member| matches!(
+                    member.as_str(),
+                    Some("sdk/rust" | "./sdk/rust" | "sdk/collab" | "./sdk/collab")
+                ))),
             "custom_workspace_requires_sdk_migration"
         );
     }
@@ -456,8 +463,11 @@ fn sdk_upgrade_manifest(manifest: &toml::Value) -> Result<()> {
                 };
                 for (name, dependency) in dependencies {
                     if let Some(path) = dependency.get("path")
-                        && !(name == "miy-app-sdk"
-                            && matches!(path.as_str(), Some("sdk/rust" | "./sdk/rust")))
+                        && !matches!(
+                            (name.as_str(), path.as_str()),
+                            ("miy-app-sdk", Some("sdk/rust" | "./sdk/rust"))
+                                | ("miy-app-collab", Some("sdk/collab" | "./sdk/collab"))
+                        )
                     {
                         return false;
                     }
@@ -562,7 +572,7 @@ fn resolve_sdk_lock(
         b"// Dependency resolution only.\n",
     )?;
     for (path, content) in crate::bundle::template() {
-        if path.starts_with("sdk/rust/") {
+        if path.starts_with("sdk/rust/") || path.starts_with("sdk/collab/") {
             let destination = stage.join(path);
             std::fs::create_dir_all(destination.parent().context("invalid_sdk_stage")?)?;
             std::fs::write(destination, content)?;
@@ -655,6 +665,9 @@ mod tests {
             include_str!("../bundles/0.10.0.json"),
             include_str!("../bundles/0.11.0.json"),
             include_str!("../bundles/0.12.0.json"),
+            include_str!("../bundles/0.13.0.json"),
+            include_str!("../bundles/0.14.0.json"),
+            include_str!("../bundles/0.15.0.json"),
         ] {
             let old: Value = serde_json::from_str(previous).unwrap();
             for (path, hash) in &current {
@@ -702,6 +715,8 @@ mod tests {
     fn staged_sdk_resolution_rejects_external_paths_and_custom_workspace_members() {
         let base = "[package]\nname='business-app'\nversion='1.0.0'\n[dependencies]\nmiy-app-sdk={path='sdk/rust'}\nserde='1'\n[workspace]\n";
         sdk_upgrade_manifest(&toml::from_str(base).unwrap()).unwrap();
+        let bundled = base.replace("serde='1'", "miy-app-collab={path='sdk/collab'}");
+        sdk_upgrade_manifest(&toml::from_str(&bundled).unwrap()).unwrap();
         for changed in [
             base.replace("serde='1'", "private-library={path='../private-library'}"),
             format!("{base}members=['../other-app']\n"),

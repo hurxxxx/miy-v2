@@ -241,6 +241,8 @@
     "usageTitle": "CLI 사용 방법",
     "referenceTitle": "CLI 명령 문서",
     "mcpTitle": "MCP 설치와 연결",
+    "releaseNotes": "릴리스 노트",
+    "releaseNotesJson": "에이전트용 릴리스 노트 (JSON)",
     "maintenanceTitle": "업데이트와 연결 관리",
     "agentChoice": "사용할 코딩 에이전트",
     "agentOpen": "{{agent}} 열기",

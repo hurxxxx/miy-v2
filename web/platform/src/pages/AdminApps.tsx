@@ -252,7 +252,7 @@ function InstallationView({
           {mode === "installations" ? (
             <>
               <p>{t("apps.release")} <code>{app.releaseId}</code></p>
-              <PermissionApproval key={app.releaseId} installationId={app.id} releaseId={app.releaseId} csrf={csrf} />
+              <PermissionApproval showStewards key={app.releaseId} installationId={app.id} releaseId={app.releaseId} csrf={csrf} />
             </>
           ) : (
             <>

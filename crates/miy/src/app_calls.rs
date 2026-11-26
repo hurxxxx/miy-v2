@@ -53,7 +53,9 @@ pub fn origin(
     p: &Principal,
     headers: &axum::http::HeaderMap,
 ) -> Option<Origin> {
-    if p.cli_session_id.is_some() {
+    // The preview rechecks its own host and browser grant after reading the body
+    // and never issues a continuation. Its bearer is not a legacy CLI origin.
+    if p.cli_session_id.is_some() || p.preview_login.is_some() {
         return None;
     }
     if p.csrf.is_some() {
@@ -101,6 +103,18 @@ pub fn allowed_route(context: &Context, path: &str, method: &Method) -> bool {
     let Some(suffix) = path.strip_prefix(&prefix) else {
         return false;
     };
+    if suffix.starts_with("platform/steward-assignment") {
+        return context.callers.is_empty()
+            && context
+                .origin
+                .as_ref()
+                .is_some_and(|origin| origin.kind == "frame")
+            && matches!(
+                (suffix, method),
+                ("platform/steward-assignment", &Method::GET | &Method::POST)
+                    | ("platform/steward-assignment/applied", &Method::POST)
+            );
+    }
     if suffix == "platform/directory" {
         return *method == Method::GET;
     }
@@ -462,6 +476,25 @@ mod tests {
             origin: None,
         };
         let prefix = format!("/api/v1/installations/{}", c.installation_id);
+        let nomination = format!("{prefix}/platform/steward-assignment");
+        assert!(!allowed_route(&c, &nomination, &Method::GET));
+        let mut frame = c.clone();
+        frame.origin = Some(Origin {
+            kind: "frame".into(),
+            digest: Uuid::new_v4().to_string(),
+        });
+        assert!(allowed_route(&frame, &nomination, &Method::GET));
+        assert!(!allowed_route(
+            &frame,
+            &format!("{prefix}/steward-assignment"),
+            &Method::PUT
+        ));
+        frame.callers.push(Caller {
+            app_id: "another".into(),
+            installation_id: Uuid::new_v4(),
+            release_id: Uuid::new_v4(),
+        });
+        assert!(!allowed_route(&frame, &nomination, &Method::POST));
         assert!(allowed_route(
             &c,
             &format!("{prefix}/connections/target/api/items"),

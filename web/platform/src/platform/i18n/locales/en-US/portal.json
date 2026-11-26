@@ -241,6 +241,8 @@
     "usageTitle": "Using the CLI",
     "referenceTitle": "CLI reference",
     "mcpTitle": "MCP setup",
+    "releaseNotes": "Release notes",
+    "releaseNotesJson": "Machine-readable release notes (JSON)",
     "maintenanceTitle": "Updates and connection management",
     "agentChoice": "Coding agent",
     "agentOpen": "Open {{agent}}",

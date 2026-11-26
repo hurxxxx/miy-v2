@@ -1013,10 +1013,7 @@ pub async fn run(
     let next = Uuid::new_v4();
     sqlx::query("INSERT INTO releases(id,app_id,version,artifact_hash,manifest) SELECT $1,app_id,'1.0.1',artifact_hash,manifest FROM releases WHERE id=$2")
         .bind(next).bind(a.release).execute(&state.pool).await?;
-    // Both releases have approvals, so these checks cannot pass merely because
-    // the replacement release lacks a connection or directory permission.
-    sqlx::query("INSERT INTO installation_permissions(installation_id,release_id,revision,permissions,approved_by) SELECT installation_id,$1,revision,permissions,approved_by FROM installation_permissions WHERE installation_id=$2 AND release_id=$3")
-        .bind(next).bind(a.installation).bind(a.release).execute(&state.pool).await?;
+    // Release activation carries the grants, while stale frames still require a reload.
     json(
         frame
             .request(Method::GET, &format!("/_miy/connections/{b_id}/api/probe"))
@@ -1554,6 +1551,9 @@ pub async fn run(
     download_links(&mut h, &suffix).await?;
     passed.push("download links: only a request its own frame started gets one, and only for an app that answers file access; the frame origin streams the file whole or by one range, refuses another site and unsatisfiable ranges, asks the app before sending and stops when the frame ends".into());
 
+    steward_nominations(&mut h, &suffix).await?;
+    passed.push("installation stewards: console nomination, direct nominee-only proof, active roster blocks recovery, acknowledgement retries and separate app admission".into());
+
     frame_permissions(&mut h, &suffix).await?;
     passed.push("frame launches list as delegated browser features only the release's requested frame permissions an administrator approved".into());
 
@@ -1563,6 +1563,137 @@ pub async fn run(
     live_connections(&mut h, &suffix).await?;
     passed.push("live connections: only the frame's own Origin upgrades, the frame token arrives in the first message, the app receives the person's signed identity and both directions relay, a bad first message closes with 4400 and losing use closes with 4403".into());
     Ok(passed)
+}
+
+async fn steward_nominations(h: &mut Harness<'_>, suffix: &str) -> Result<()> {
+    use auth::BrowserPurpose::{Console, DevPortal};
+    let perms = vec!["platform:stewards:claim".to_owned()];
+    let app = h.app(&format!("steward-{suffix}"), &perms).await?;
+    let alice = h.user().await?;
+    let bob = h.user().await?;
+    let admin = h.user().await?;
+    sqlx::query("UPDATE users SET admin=true WHERE id=$1")
+        .bind(&admin)
+        .execute(&h.state.pool)
+        .await?;
+    let console = h.session(&admin, Console).await?;
+    let console_path = format!(
+        "{}/api/v1/installations/{}/steward-assignment",
+        h.state.auth.console_origin, app.installation
+    );
+    let nominate = |subject: &str, previous: &Value, reason: Option<&str>| {
+        h.client
+            .put(&console_path)
+            .header(
+                "cookie",
+                format!(
+                    "{}={}",
+                    h.state.auth.cookie_name(Console, "development"),
+                    console.cookie
+                ),
+            )
+            .header("origin", &h.state.auth.console_origin)
+            .header("x-miy-csrf", &console.csrf)
+            .json(&json!({"subjectId":subject,"expectedAssignmentId":previous,"reason":reason}))
+    };
+    status(nominate(&alice, &Value::Null, None).send().await?, 403).await?;
+    h.approve(&app, &perms).await?;
+    status(
+        nominate(
+            &alice,
+            &Value::Null,
+            Some("Recovery before first nomination"),
+        )
+        .send()
+        .await?,
+        400,
+    )
+    .await?;
+    let first = json(nominate(&alice, &Value::Null, None).send().await?, 200).await?["id"].clone();
+    status(nominate(&bob, &Value::Null, None).send().await?, 409).await?;
+    let session = h.session(&alice, DevPortal).await?;
+    status(
+        launch_code(h.client, h.state, &session, DevPortal, app.installation).await?,
+        403,
+    )
+    .await?;
+    h.grant(&alice, &app).await?;
+    h.grant(&bob, &app).await?;
+    let frame = h.open(&session, &app).await?;
+    status(
+        frame.request(Method::GET, "/_miy/api/probe").send().await?,
+        200,
+    )
+    .await?;
+    let proof = app.proof()?;
+    let path = format!(
+        "{}/api/v1/installations/{}/platform/steward-assignment",
+        h.portal, app.installation
+    );
+    let get = |proof: &str| h.client.get(&path).bearer_auth(proof);
+    let claim = |proof: &str, id: &Value, users: &[&str]| {
+        h.client
+            .post(&path)
+            .bearer_auth(proof)
+            .json(&json!({"assignmentId":id,"stewards":users}))
+    };
+    let confirm = |proof: &str, id: &Value| {
+        h.client
+            .post(format!("{path}/applied"))
+            .bearer_auth(proof)
+            .json(&json!({"assignmentId":id}))
+    };
+    ensure!(json(get(&proof).send().await?, 200).await? == json!({"assignmentId":first}));
+    status(confirm(&proof, &first).send().await?, 409).await?;
+    status(claim(&proof, &first, &[]).send().await?, 200).await?;
+    for _ in 0..2 {
+        status(confirm(&proof, &first).send().await?, 200).await?;
+    }
+    ensure!(json(get(&proof).send().await?, 200).await? == json!({"assignmentId":null}));
+    let second = json(
+        nominate(&bob, &first, Some("Recovery test")).send().await?,
+        200,
+    )
+    .await?["id"]
+        .clone();
+    status(claim(&proof, &second, &[]).send().await?, 403).await?;
+    let bob_session = h.session(&bob, DevPortal).await?;
+    let bob_frame = h.open(&bob_session, &app).await?;
+    status(
+        bob_frame
+            .request(Method::GET, "/_miy/api/probe")
+            .send()
+            .await?,
+        200,
+    )
+    .await?;
+    let other = app.proof()?;
+    status(claim(&other, &second, &[&alice]).send().await?, 409).await?;
+    sqlx::query("UPDATE users SET enabled=false WHERE id=$1")
+        .bind(&alice)
+        .execute(&h.state.pool)
+        .await?;
+    let recovery = json(
+        nominate(&bob, &second, Some("Previous steward disabled"))
+            .send()
+            .await?,
+        200,
+    )
+    .await?["id"]
+        .clone();
+    status(claim(&other, &recovery, &[&alice]).send().await?, 200).await?;
+    status(confirm(&other, &recovery).send().await?, 200).await?;
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit WHERE action='steward.applied' AND target LIKE $1",
+    )
+    .bind(format!("installation:{}:%", app.installation))
+    .fetch_one(&h.state.pool)
+    .await?;
+    ensure!(
+        count == 2,
+        "acknowledgement must audit each applied assignment once"
+    );
+    Ok(())
 }
 
 /// Download links (M10): the owning app's backend, inside a request that its
