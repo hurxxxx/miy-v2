@@ -61,6 +61,7 @@ mod cli_regression;
 mod cli_release_source;
 mod cli_remote;
 mod cli_report;
+mod cli_update;
 mod component_cli;
 mod component_contract;
 #[cfg(feature = "server")]
@@ -307,6 +308,12 @@ async fn main() -> Result<()> {
                 clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
             ) {
                 error.print()?;
+                if error.kind() == clap::error::ErrorKind::DisplayVersion
+                    && argv.len() == 2
+                    && let Some(notice) = cli_update::check(cli_update::selected()).await
+                {
+                    eprintln!("{notice}");
+                }
                 return Ok(());
             }
             let mode = output_hint(&argv).resolve(terminal);
@@ -317,7 +324,34 @@ async fn main() -> Result<()> {
                 "Invalid command arguments. Run miy --help or miy app <command> --help.",
             )
             .into());
-            std::process::exit(cli_output::emit(mode, "miy", &result, false)?);
+            // An unknown subcommand may have shipped in a newer CLI. Avoid guessing
+            // the destination when the rejected argument list explicitly selects one.
+            let unqualified = !argv.iter().any(|arg| {
+                arg.to_str().is_some_and(|arg| {
+                    matches!(
+                        arg.split('=').next(),
+                        Some("--context" | "--project" | "--server" | "--outbox")
+                    )
+                })
+            });
+            let notice = if unqualified && error.kind() == clap::error::ErrorKind::InvalidSubcommand
+            {
+                cli_update::check(cli_update::selected()).await
+            } else {
+                None
+            };
+            if mode == OutputMode::Text
+                && let Some(notice) = &notice
+            {
+                eprintln!("{notice}");
+            }
+            std::process::exit(cli_output::emit(
+                mode,
+                "miy",
+                &result,
+                false,
+                notice.as_ref(),
+            )?);
         }
     };
     let command_name = command_name(&matches);
@@ -338,20 +372,42 @@ async fn main() -> Result<()> {
             "This command does not provide a JSONL event stream.",
         )
         .into());
-        std::process::exit(cli_output::emit(mode, &command_name, &result, false)?);
+        std::process::exit(cli_output::emit(mode, &command_name, &result, false, None)?);
     }
     if let Err(error) = cli_config::initialize(args.options) {
-        std::process::exit(cli_output::emit(mode, &command_name, &Err(error), false)?);
+        std::process::exit(cli_output::emit(
+            mode,
+            &command_name,
+            &Err(error),
+            false,
+            None,
+        )?);
     }
     if let Some(fields) = &cli_config::options().fields
         && let Err(error) = cli_input::validate_fields(&command_name, fields)
     {
-        std::process::exit(cli_output::emit(mode, &command_name, &Err(error), false)?);
+        std::process::exit(cli_output::emit(
+            mode,
+            &command_name,
+            &Err(error),
+            false,
+            None,
+        )?);
     }
     let raw = matches!(
         &args.command,
         Command::Mcp | Command::InternalDbTunnel | Command::Completion { .. }
     );
+    let notice = if raw || mode == OutputMode::Jsonl {
+        None
+    } else {
+        cli_update::check(cli_update::target(&args.command)).await
+    };
+    if mode == OutputMode::Text
+        && let Some(notice) = &notice
+    {
+        eprintln!("{notice}");
+    }
     let result = match args.command {
         Command::Context { command } => cli_config::execute(command).map(cli_output::Outcome::Data),
         Command::Auth { command } => Box::pin(cli_login::execute(command))
@@ -421,7 +477,7 @@ async fn main() -> Result<()> {
     {
         cli_report::remember(error);
     }
-    let code = cli_output::emit(mode, &command_name, &result, raw)?;
+    let code = cli_output::emit(mode, &command_name, &result, raw, notice.as_ref())?;
     if code != 0 {
         std::process::exit(code);
     }

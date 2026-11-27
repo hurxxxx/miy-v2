@@ -187,6 +187,12 @@ fn invalid_report(reason: &str) -> CliError {
     )
 }
 
+pub(crate) fn saved_target(outbox: Option<&Path>, id: Uuid) -> Option<crate::cli_update::Target> {
+    let path = directory(outbox).ok()?.join(format!("{id}.json"));
+    let saved: Saved = read(&path).ok()?;
+    (saved.report.id == id).then_some((saved.origin, saved.ca_file))
+}
+
 pub async fn execute(command: ReportCommand, outbox: Option<PathBuf>) -> Result<Value> {
     match command {
         ReportCommand::Send {

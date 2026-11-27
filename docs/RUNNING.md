@@ -56,6 +56,8 @@ miy completion powershell
 
 ## CLI 업데이트와 MCP 갱신
 
+CLI 0.25.0부터 `miy --version`, `miy report list`, 인증·앱 조회 등 일반 명령은 선택한 포털에서 실제 설치 가능한 CLI 버전을 확인한다. 서버 게시 버전이 더 높으면 현재 버전·게시 버전·설치 링크가 표시된다. 로컬 버전이 앞선 경우에도 두 버전을 확인할 수 있다. 터미널은 stderr, JSON 성공·오류 응답은 `meta.cliVersionNotice`를 사용한다. 포털별로 확인 결과를 한 시간 보관한다. 조회 실패는 5분 뒤 재시도하며 원래 명령은 계속 실행한다. 신고 미리보기·오프라인 저장, 로컬 도움말, MCP·JSONL 스트림에는 자동 조회를 추가하지 않는다.
+
 전역 CLI 설치, 프로젝트에 복사된 CLI, 실행 중인 MCP는 각각 갱신해야 한다. CLI 0.12.1부터 `miy describe --topic updates`와 프로젝트 MCP의 `get_cli_help({"topic":"updates"})`로 로그인·네트워크 없이 이 절차를 읽을 수 있다. 원격 HTTP MCP에는 `get_cli_update_guide`가 있으며 해당 HTTP 연결의 인증은 필요하다.
 
 1. `miy context show`의 업무 포털 origin을 확인하고 그 서버의 `/cli/install`을 연다. 도메인 또는 IP·포트를 그대로 사용한다. 설정을 읽지 못하면 관리자에게 공개 포털 주소를 확인한다.

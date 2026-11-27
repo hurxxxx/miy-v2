@@ -18,10 +18,20 @@ def main():
     received, mode = [], ["ok"]
 
     receipt_keys = {}
+    installer = {"version": "99.10.0", "requests": 0, "available": True}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
             pass
+
+        def do_GET(self):
+            assert self.path == "/api/v1/cli/install"
+            assert not any(self.headers.get(h) for h in ("Authorization", "Cookie", "x-miy-report-key"))
+            installer["requests"] += 1
+            self.send_response(200 if installer["available"] else 503)
+            self.end_headers()
+            self.wfile.write(json.dumps({"schemaVersion": 1, "serverUrl": origin,
+                                         "cliVersion": installer["version"], "downloads": [{"target": "test"}]}).encode())
 
         def do_POST(self):
             assert self.path in ("/api/v1/support/reports", "/api/v1/support/reports/result")
@@ -73,6 +83,29 @@ def main():
             assert "redacted" in preview["report"]["message"]
             checks.append("preview_without_network_or_files_and_redaction")
             run("context", "init", "--url", origin)
+            installed = preview["report"]["diagnostics"]["cliVersion"]
+            assert installer["requests"] == 0
+            notice = run("report", "list")["meta"]["cliVersionNotice"]
+            assert notice == {"status": "update_available", "installedVersion": installed,
+                              "publishedVersion": installer["version"], "installUrl": origin + "/cli/install"}
+            assert run("report", "new-subcommand", exit_code=2)["meta"]["cliVersionNotice"] == notice
+            text = subprocess.run([cli, "--output", "text", "report", "list"], cwd=root, env=env, capture_output=True, text=True)
+            assert text.returncode == 0 and notice["installUrl"] in text.stderr and notice["installUrl"] not in text.stdout
+            ver = subprocess.run([cli, "--version"], cwd=root, env=env, capture_output=True, text=True)
+            assert ver.stdout.strip() == "miy " + installed and notice["publishedVersion"] in ver.stderr
+            assert installer["requests"] == 1
+            cache, = config.glob("cli-version-*.json")
+            cache.unlink()
+            installer["version"] = installed
+            assert "cliVersionNotice" not in run("report", "list")["meta"]
+            cache.unlink()
+            installer["version"] = "0.0.1"
+            assert run("report", "list")["meta"]["cliVersionNotice"]["status"] == "client_newer"
+            cache.unlink()
+            installer["available"] = False
+            assert "cliVersionNotice" not in run("report", "list")["meta"]
+            assert installer["requests"] == 4
+            checks.append("published_cli_comparison_text_json_errors_cache_and_unavailable_server")
             # A corrupt credential directory reproduces a local read failure,
             # without ever creating or reading real credentials.
             cfg = json.loads((config / "config.json").read_text())

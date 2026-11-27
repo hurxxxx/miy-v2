@@ -99,13 +99,17 @@ fn emit_to(
     command: &str,
     result: &Result<Outcome, anyhow::Error>,
     raw: bool,
+    notice: Option<&crate::cli_update::Notice>,
     stdout: &mut impl Write,
     stderr: &mut impl Write,
 ) -> io::Result<i32> {
     match result {
         Ok(Outcome::Raw) => Ok(0),
         Ok(Outcome::Data(data)) => {
-            let meta = metadata(data);
+            let mut meta = metadata(data);
+            if let Some(notice) = notice {
+                meta["cliVersionNotice"] = json!(notice);
+            }
             let projected;
             let data = if let Some(fields) = crate::cli_config::options().fields.as_deref() {
                 match crate::cli_input::project(data, fields) {
@@ -113,7 +117,9 @@ fn emit_to(
                         projected = value;
                         &projected
                     }
-                    Err(error) => return emit_to(mode, command, &Err(error), raw, stdout, stderr),
+                    Err(error) => {
+                        return emit_to(mode, command, &Err(error), raw, notice, stdout, stderr);
+                    }
                 }
             } else {
                 data
@@ -140,7 +146,7 @@ fn emit_to(
                     stdout,
                     &json!({
                         "schemaVersion":1,"command":command,"ok":false,
-                        "data":null,"error":failure,"meta":{}
+                        "data":null,"error":failure,"meta":notice.map_or_else(|| json!({}), |n| json!({"cliVersionNotice":n}))
                     }),
                 )?;
             }
@@ -154,6 +160,7 @@ pub fn emit(
     command: &str,
     result: &Result<Outcome, anyhow::Error>,
     raw: bool,
+    notice: Option<&crate::cli_update::Notice>,
 ) -> io::Result<i32> {
     let stdout = io::stdout();
     let mode = mode.resolve(stdout.is_terminal());
@@ -162,6 +169,7 @@ pub fn emit(
         command,
         result,
         raw,
+        notice,
         &mut stdout.lock(),
         &mut io::stderr().lock(),
     )
@@ -179,7 +187,16 @@ mod tests {
     ) -> (i32, Vec<u8>, Vec<u8>) {
         let mut stdout = vec![];
         let mut stderr = vec![];
-        let code = emit_to(mode, "app status", &result, raw, &mut stdout, &mut stderr).unwrap();
+        let code = emit_to(
+            mode,
+            "app status",
+            &result,
+            raw,
+            None,
+            &mut stdout,
+            &mut stderr,
+        )
+        .unwrap();
         (code, stdout, stderr)
     }
 
@@ -298,6 +315,7 @@ mod tests {
             "app status",
             &Ok(Outcome::Data(json!({}))),
             false,
+            None,
             &mut Closed,
             &mut vec![],
         )
