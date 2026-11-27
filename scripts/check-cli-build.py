@@ -141,6 +141,12 @@ def check(cli):
             def get(self):
                 parsed = urlsplit(self.path)
                 path, query = parsed.path, parse_qs(parsed.query)
+                if path == '/api/v1/cli/install':
+                    require(self.server.surface == 'portal', 'Unexpected installer origin')
+                    require(not any(self.headers.get(key) for key in ('Authorization', 'Cookie', 'x-miy-csrf', 'x-miy-report-key')),
+                            'Installer discovery sent private credentials')
+                    self.reply(200, {'schemaVersion': 1, 'serverUrl': surfaces.portal_origin, 'downloads': []})
+                    return
                 if path == '/auth/options':
                     self.reply(200, {'developmentLogin': True, 'surface': self.server.surface,
                                      'portalOrigin': surfaces.portal_origin, 'consoleOrigin': surfaces.console_origin})
