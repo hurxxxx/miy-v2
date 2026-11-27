@@ -168,6 +168,11 @@ def fixture_server(config):
             path = urlsplit(self.path).path
             state.surface_requests.append((self.server.surface, "GET", path))
             query = parse_qs(urlsplit(self.path).query)
+            if path == "/api/v1/cli/install":
+                if self.server.surface != "portal" or any(self.headers.get(key) for key in ("Authorization", "Cookie", "x-miy-csrf", "x-miy-report-key")):
+                    state.failures.append("Private credentials or a non-portal installer request")
+                self.send_json(200, {"schemaVersion": 1, "serverUrl": state.portal_origin, "downloads": []})
+                return
             if path == "/auth/options":
                 self.send_json(200, {"developmentLogin": True, "surface": self.server.surface,
                                      "portalOrigin": state.portal_origin, "consoleOrigin": state.console_origin})
