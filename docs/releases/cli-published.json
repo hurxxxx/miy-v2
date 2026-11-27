@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "origin": "https://portal.miy.works",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "bundleVersion": "0.17.1",
-  "sourceCommit": "1d410d8ece89332baaab32ca61163a71c5f01fe8",
-  "cliReleaseRun": 45910021042,
-  "record": "miy-works-0.24.0-2026-11-27.json",
+  "sourceCommit": "28af6d920f4423c3c4b216ab1cd8ef31285f0afb",
+  "cliReleaseRun": 45924621317,
+  "record": "miy-works-0.25.0-2026-11-27.json",
   "otherHosts": {
     "https://portal.dwdcc.kr": {
       "version": "0.13.0",
